@@ -58,8 +58,8 @@ SERVICES = [
                #'gsh',
                #['gsh' + x for x in allperm('i')],
                #'grs',
-               #'gsw',
-               #['gsw' + x for x in allperm('rt')], #combination of 'r', 't'
+               'gsw',
+               ['gsw' + x for x in allperm('rt')], #combination of 'r', 't'
                #'gpl',
                #'gfl',
                #'gdi',
@@ -139,24 +139,24 @@ def GITStatus(srv, param):
               possible combinations are: r, v, d, rd, vd
     """
 
-    isbranch = ('b' in srv)
-    isremote = ('r' in srv)
-    isversion = ('v' in srv)
-    isdir = ('d' in srv)
-    version_str = param[1] if isversion else None
-    branch_name = param[1] if isbranch else None
+    _isbranch = ('b' in srv)
+    _isremote = ('r' in srv)
+    _isversion = ('v' in srv)
+    _isdir = ('d' in srv)
+    _version_str = param[1] if _isversion else None
+    _branch_name = param[1] if _isbranch else None
 
     #initialize the ball
     _ball = Ball()
 
-    if isversion is True:
+    if _isversion is True:
         #show diff between two given versions
-        _cmd = status_version_cmd(version_str)
-    elif isbranch is True or isremote is True:
+        _cmd = status_version_cmd(_version_str)
+    elif _isbranch is True or _isremote is True:
         #show diff between two branches's HEAD
         #the branch to be compared with could be local or remote
         _current_branch = _get_current_branch()
-        if branch_name is None:
+        if _branch_name is None:
             #we are now comparing with the merge branch
             try:
                 _branch_name = _get_remote_branch()
@@ -165,13 +165,13 @@ def GITStatus(srv, param):
                 _exit_with_error()
         else:
             #we have a local branch, start comparing
-            _branch_name = branch_name
+            pass
         _cmd = status_branch_cmd(_branch_name)
     else:
         #we are asked to do a normal 'git status'
         _cmd = status_cmd(param)
 
-    if isdir is True:
+    if _isdir is True:
         #only show the touched files in the current directory
         _cmd += ' -- ' + os.getcwd()
 
@@ -179,12 +179,12 @@ def GITStatus(srv, param):
     _tmp_result = _envoke([_cmd])
 
     #prettify the outcome
-    final_str = ''
-    if isversion or isbranch or isremote:
-        if isremote is True or isbranch is True:
+    _final_str = ''
+    if _isversion or _isbranch or _isremote:
+        if _isremote is True or _isbranch is True:
             _comp2, _comp1 = _branch_name, _current_branch
-        elif isversion is True:
-            _comp2, _comp1 = version_str.split('..')
+        elif _isversion is True:
+            _comp2, _comp1 = _version_str.split('..')
         else:
             _comp2 = _comp1 = 'UNKNOWN'
 
@@ -195,13 +195,56 @@ def GITStatus(srv, param):
             _changes = len(_tmp_result.split('\n')) - 1
 
         _total = 'Different files: ' + color['red'] + str(_changes) + color['end']
-        final_str += _make_msg_bar(_make_status_header(_comp1, _comp2))
-        final_str += _tmp_result
-        final_str += _make_msg_bar(_total)
+        _final_str += _make_msg_bar(_make_status_header(_comp1, _comp2))
+        _final_str += _tmp_result
+        _final_str += _make_msg_bar(_total)
     else:
-        final_str = _tmp_result
+        _final_str = _tmp_result
 
-    return final_str
+    return _final_str
+
+def GITSwitch(srv, param):
+    """ gsw
+        switch to another branch, remote or local or newly created.
+        gsw(rt): to switch to another branch, do a 'gsw <branch-name>' or,
+                    do a 'gsw', and then type in a branch name in the displyed list or,
+                    do a 'gsw', and type in the name of a new branch, to create the new branch and 
+                                switch to the branch.
+                 with (r) do a 'gswr <branch-name> you will be checking/switching to a remote branch or,
+                    do a 'gswr', and then type in a branch name in the displyed list
+                 with (t), you will switch to a branch has the tag on
+    """
+
+    _num_args = len(param)
+    _hasbranch = (_num_args == 2)
+    _hastag = False
+    _isremote = ('r' in srv)
+    _bname = _tname = ''
+
+    if _hasbranch is _hastag is False:
+        #no hint about what the user is trying to do
+        #give a list of local/remote branch to select
+        return _switch_branch(_isremote)
+    else:
+        #either branch or tag is given
+        try:
+            _cmd = 'git checkout'
+            if ( _hastag is True):
+                #checkout a branch with the given tag
+                _branchname = _get_answer(prompt = 'Enter a new branch name to keep the remote branch data',
+                                          help = 'This command is for getting remote version, \n\
+                                                  therefore it is required to create a branch here')
+                _tname = args[1]
+                if _branchname.strip() == '':
+                    print("A branch name is required, the 'nobranch' is not recommended")
+                    return
+                else:
+                    _cmd += '%(tag)s -b %(newbranch)s' %\
+                            {'tag': _tname,
+                             'newbranch': _branchname}
+            return _envoke([_cmd])
+        except IndexError:
+            return "ERROR: the command and the argument don't match."
 
 #setup the environment for first use
 def GITSetup():
@@ -293,14 +336,14 @@ def _set_branch_config(branch_from):
                            {'curbranch': _cur_branch}
                           ])
     if _read_merge is None or _read_remote is None:
-        #depending on which branch is this branch from
-        #set the config settings
+        #read the remote and merge values from the parent branch
         _parent_remote = _envoke(['git config --get branch.%(curbranch)s.remote' %
                                   {'curbranch': branch_from}
                                  ])
         _parent_merge = _envoke(['git config --get branch.%(curbranch)s.merge' %
                                  {'curbranch': branch_from}
                                 ])
+        #set the remote and merge values of the current branch
         _envoke(['git config branch.%(curbranch)s.remote %(remote)s' %
                  {'curbranch': _cur_branch,
                      'remote': _parent_remote }
@@ -309,60 +352,70 @@ def _set_branch_config(branch_from):
                  {'curbranch': _cur_branch,
                      'merge': _parent_merge }
                 ])
-        pass
 
-#commit the changes to local repository
-def _switch_branch(list, isremote = False):
-    for line in list:
+#change to a local branch
+def _switch_branch(isremote = False):
+    _cmd = 'git branch'
+    if isremote is True:
+        _cmd += ' -r'
+    _tmp = _envoke([_cmd])
+    if _tmp is None:
+        _exit_with_error()
+
+    #display a list of branches available
+    _list = _tmp.split('\n')
+    for line in _list:
         if line != '' and line != '* (no branch)':
             if '*' in line:
+                #highlight the current branch
                 print(' '*4 +
                       color['red'] + '>> ' + color['end'] +
-                      line.split()[-1]) #get rid of the '*" if there is any
+                      line.split()[-1]) #get the branch name
             else:
                 print(' '*4 +
                       '>> ' +
-                      line.split()[-1]) #get rid of the '*" if there is any
+                      line.split()[-1]) #get the branch name
 
-    ans=_get_answer(help = 'You can: \
-                           \n   Enter an existing branch above or,\
-                           \n   Type the name for an existing branch not in the list or,\
-                           \n   Type the name for a new one or,\
-                           \n   Press Enter to quit')
-    if ans == '':
+    _selected_branch=_get_answer(help = 'You can: \
+                                       \n   Enter an existing branch above or,\
+                                       \n   Type the name for an existing branch not in the list or,\
+                                       \n   Type the name for a new one or,\
+                                       \n   Press Enter to quit')
+    if _selected_branch == '':
+        #return if no branch is selected or created
         return False
     _tmp = ''
-    for line in list:
-        if line != '' and ans == line.split()[-1]:
+    for line in _list:
+        if line != '' and _ans == line.split()[-1]:
             if True == isremote:
-                _branch_name = _get_answer(prompt = 'Give a name for the new local branch:',
-                                           help = 'if give no name you will be on ' +
-                                                  color['red'] + 'NO ' + color['end'] +
-                                                  'branch !!')
-                if '' == _branch_name:
-                    _tmp = _envoke(['git checkout %s'%ans])
+                _local_branch = _get_answer(prompt = "Give a name for the new local branch:",
+                                            help = "if give no name you will be on " +
+                                                   color['red'] + "NO " + color['end'] +
+                                                   "branch and we don't recommend a state of nobranch")
+                if '' == _local_branch:
+                    return False
                 else:
                     _tmp = _envoke(['git checkout %(remote_name)s -b %(local_name)s' %
-                                    {'remote_name': ans,
-                                     'local_name':_branch_name}
+                                    {'remote_name': _selected_branch,
+                                     'local_name':_local_branch}
                                    ])
             else:
-                _tmp = _envoke(['git checkout %s'%ans])
+                _tmp = _envoke(['git checkout %s' % _selected_branch])
 
-            print(_tmp)
-            break
-    if _tmp == '':
-        _parent_branch = _get_current_branch()
-        _tmp = _envoke(['git branch %s'%ans])
-        _tmp = _envoke(['git checkout %s'%ans])
-        print('branch ' +
-              color['red'] + ans + color['end'] +
-              ' has been created and you have been switched to this branch')
-        #this is a new branch, set the config properly
-        _set_branch_config(branch_from = _parent_branch)
-        print('and its config is set based on' +
-              color['red'] + ans + color['end'])
-    return True
+            return _tmp
+    #we are here because the selected branch is not in the list
+    #create a new branch with the name given
+    _previous_branch = _get_current_branch()
+    _tmp = _envoke(['git branch %s'%ans])
+    _tmp = _envoke(['git checkout %s'%ans])
+    _set_branch_config(branch_from = _previous_branch)
+    _result = 'branch ' +\
+              color['red'] + _selected_branch + color['end'] +\
+              ' has been created and you have been switched to this branch'
+    #this is a new branch, set the config properly
+    _result += 'and its config is set based on' +\
+               color['red'] + _selected_branch + color['end']
+    return _result
 
 #check if we are at a git repository
 def _check_git_path():
@@ -493,7 +546,8 @@ def status_branch_cmd(remotebranch):
 def status_cmd(param):
     return 'git status ' % param
 
-CALL_TABLE = { 'gst': GITStatus
+CALL_TABLE = { 'gst': GITStatus,
+               'gsw': GITSwitch
              }
 
 if __name__ == '__main__':
@@ -509,16 +563,17 @@ if __name__ == '__main__':
     service = parser.get_prog_name()
 
     #a major service will always be a 3-character key word
-    if service.startswith('gst'):
-        result = GITStatus(service[3:], sys.argv)
-        print(result)
-    elif service == 'ghelp':
+    if service == 'ghelp':
         if len(sys.argv) == 2:
             print(CALL_TABLE[sys.argv[1][:3]].__doc__)
         else:
             print(__doc__)
     else:
-        GITSetup()
+        try:
+            result = CALL_TABLE[service[:3]](service[3:], sys.argv)
+            print(result)
+        except ValueError:
+            GITSetup()
     """
     elif real_cmd == 'gco':
         GITClone(real_cmd, sys.argv[1:])
