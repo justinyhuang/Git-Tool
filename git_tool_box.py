@@ -4,13 +4,13 @@ GitBox - a utility set for easier use of git
 
 Available services:
    gst: Git STatus, list modified/added/removed files between versions/branches
+   gsw: Git Switch, switch/create to a branch/tag, remotely or locally
+   gif: Git InFo, shows basic information of the current version
 Proposed services:
    gco: Git ClOne/CheckOut, to get a new sandbox
    gbu: Git BackUp, commit changes in the working copy to local repository
    grs: Git ReStore, go back to a previous backup version
    gpl: Git PulL, pull lastest version from the remote repository
-   gsw: Git Switch, switch to a branch/tag, remotely or locally
-   gif: Git InFo, shows basic information of the current version
    gsh: Git SHare, to share a branch with others
    gpp: Git Prepare, set up a new sandbox with all your changes inside
         *This is for preparing a clean sandbox to submit for integration
@@ -52,9 +52,9 @@ SERVICES = [
                #'gco',
                'gst',
                ['gst' + x for x in allperm('drvb')], #combination of 'd', 'r', 'v', 'b'
-               #'gif',
-               #['gif' + x for x in allperm('t')],
-               #'gbu',
+               'gif',
+               ['gif' + x for x in allperm('t')],
+               'gbu',
                #'gsh',
                #['gsh' + x for x in allperm('i')],
                #'grs',
@@ -138,7 +138,7 @@ def GITStatus(srv, param):
 
               possible combinations are: r, v, d, rd, vd
     """
-
+    _check_git_path()
     _isbranch = ('b' in srv)
     _isremote = ('r' in srv)
     _isversion = ('v' in srv)
@@ -208,13 +208,13 @@ def GITSwitch(srv, param):
         switch to another branch, remote or local or newly created.
         gsw(rt): to switch to another branch, do a 'gsw <branch-name>' or,
                     do a 'gsw', and then type in a branch name in the displyed list or,
-                    do a 'gsw', and type in the name of a new branch, to create the new branch and 
+                    do a 'gsw', and type in the name of a new branch, to create the new branch and
                                 switch to the branch.
                  with (r) do a 'gswr <branch-name> you will be checking/switching to a remote branch or,
                     do a 'gswr', and then type in a branch name in the displyed list
                  with (t), you will switch to a branch has the tag on
     """
-
+    _check_git_path()
     _num_args = len(param)
     _hasbranch = (_num_args == 2)
     _hastag = False
@@ -246,6 +246,151 @@ def GITSwitch(srv, param):
         except IndexError:
             return "ERROR: the command and the argument don't match."
 
+def GITInfo(srv, param):
+    """gif
+       to display the version/branch/tag info
+       gif(t): gif <number of versions to display>
+                   when no parameter is given, only the current version info will be shown
+               gif <since generation> <until generation>
+                   display all the versions between the since_generation and the until_generation
+                   e.g 'gif 3 0' will show you the versions from HEAD to the 3rd generation grand-parent of HEAD
+                       'gif 7 4' will show you the versions from the 4th generation grand-parent of HEAD to
+                       the 7th generation grand-parent of HEAD
+                   * the tool is smart enough even you put the since and until version in the other order =)
+               with (t) you will get the tag info if there is any.
+                   Note that fetching tag info would take a bit more time
+    """
+    _check_git_path()
+    _format='___%nID:       %h%nDate:     %cd%nComment:  %s'
+    _if_show_tag = ('t' in srv)
+    _since = _until = _num = 0
+    if len(param) == 3:
+        #start and end of a version segment is given.
+        _since = int(param[1])
+        _until = int(param[2])
+    elif len(param) == 2:
+        #the number of versions is given.
+        _num = int(param[1])
+    else:
+        #default, show the latest version info
+        _num = 1
+
+    if _num != 0:
+        _range = '-%(num)s' % {'num': str(_num)}
+    else:
+        _range = "-%(num_of_log)s --skip=%(num_to_skip)s" %\
+                {'num_of_log': str(abs(_since - _until)),
+                 'num_to_skip': str(min(_since, _until))}
+    _result = _envoke(["git log %(range)s --format='%(format)s'" %
+                    {'range': _range,
+                     'format': _format}
+                   ])
+
+    _result_list = _result.split('___\n')[1:]
+
+    if _if_show_tag is True:
+        #will show the tag info
+        _cmd = "git log %(range)s " % {'range': _range}
+        _cmd += "--pretty=format:'%ad|%h|%d' --abbrev-commit --date=short"
+        _logs = _envoke([_cmd]).split('\n')
+
+        _branch = _get_current_branch()
+        _result = ''
+        for _line in _logs:
+            [_date, _hash, _tmp] = _line.split('|')
+            _tmp = _tmp.strip(' ()').split(', ')
+            if _if_show_tag is True:
+                try:
+                    _container_tags = _envoke(["git tag --contains %(hash)s" %
+                                               {'hash':_hash}
+                                              ]).split('\n')
+                    #get the tags on this specific version
+                    _tags = list(set(_tmp) & set(_container_tags))
+                    _result += '___\n'
+                    _result += 'Branch: %(branch)s\nDate: %(date)s\nRev: %(rev)s\nTags: %(tags)s\n' %\
+                               {'branch':_branch,
+                                'date': _date,
+                                'rev':_hash,
+                                'tags':_tags}
+                    _result += _result
+                except AttributeError:
+                    #we might just see a version without any tag
+                    _result += '___\n'
+                    _result += 'Branch: %(branch)s\nDate: %(date)s\nRev: %(rev)s\n' %\
+                               {'branch':_branch,
+                                'date': _date,
+                                'rev':_hash}
+                    _result += _result
+            else:
+                #getting tags takes too much time, skip it by default
+                _result += '___\n'
+                _result += 'Branch: %(branch)s\nDate: %(date)s\nRev: %(rev)s\n' %\
+                           {'branch':_branch,
+                            'date': _date,
+                            'rev':_hash}
+                _result += _result
+    return _result
+
+def GITBackup(srv, param):
+    """ gbu
+        commit/backup the changes to the local repository
+             Changes can be back-up to the current branch, or another branch you
+             select from the give list
+             you can also generate a patch of your changes to store the patch
+             somewhere else.
+    """
+    _current_branch = _get_current_branch()
+    if _current_branch == 'master':
+        ans=_get_answer(prompt = 'Are you sure to back up in ' +\
+                               color['red'] + 'master ' + color['end'] + 'branch? [y/N]',
+                        help = 'In most cases what you need is to back up to\
+                                your own branch in order to merge or further\
+                                branch out later. So are you sure?')
+        if ans is not 'y' and ans is not 'Y':
+            if _switch_branch() == False:
+                _exit()
+    #elif line == '* (no branch)':
+    #    # we are on 'no' branch
+    #    if _switch_branch(_branches) == False:
+    #        return
+    #    break
+    else:
+        #this is a normal branch
+        ans = _get_answer(prompt = 'back up in ' +
+                          color['red'] + _current_branch + color['end'] + '? [Y/n]')
+        if ans == 'n' or ans == 'N':
+            if _switch_branch() == False:
+                _exit()
+
+    msg = _get_answer(prompt = 'Any comment? [enter for empty comment]')
+    msg = '"' + msg + '"'
+    result = _envoke(['git commit -a -m %s'%msg])
+    print(result)
+
+    #to allow local backup in one's home directory
+    _ans = _get_answer(prompt = 'Backup the changes to a patch also? [y/N]',
+                       help = "say y or Y if you like to make a patch file for the change")
+    if _ans == 'y' or _ans == 'Y':
+        _file_list, _version_str = _get_version_range(with_previous_version = False)
+        if _file_list is None or _version_str is None:
+            _exit_with_error();
+        _tmp = _envoke([status_cmd(_version_str)])
+        print("done")
+        _ans = _get_answer(prompt = 'where to store the patch file?')
+        _target_dir=os.path.expanduser(_ans)
+        if not os.path.isdir(_target_dir):
+            ans=_get_answer(prompt = 'The path doesn\'t seem to exist. Try to make the directory? [Y/n]',
+                            help = 'I will try my best to create the directory/ies.\
+                                    \nWould you like me to do that for you?')
+            if ans == 'n' or ans == 'N':
+                print('OK, see you later')
+                return
+            else:
+                os.makedirs(_target_dir)
+        _envoke(['mv /tmp/backup.patch ' + _target_dir +
+                 '/backup.%(verstr)s.patch ' % {'verstr': _version_str}])
+        print("back up has been saved as " + _target_dir +
+              '/backup.%(verstr)s.patch ' % {'verstr': _version_str})
 #setup the environment for first use
 def GITSetup():
     ans=_get_answer(prompt = 'Would you like to setup GITTool? [y/N]',
@@ -353,6 +498,54 @@ def _set_branch_config(branch_from):
                      'merge': _parent_merge }
                 ])
 
+#prompt the user a list of versions and ask for a selected version
+def _get_version(since = 7, until = 0):
+    _since = since
+    _until = until
+    _record_number = since
+    while True:
+        _logs = GITInfo(since = _since, until = _until)
+        print(_logs)
+        ans = _get_answer(help = 'Type:\n' +
+                                 '    ID of the version you want, or\n' +
+                                 '    Enter directly for more versions, or\n' +
+                                 '    ["more" ID] for further details of the version')
+        if ans.startswith('more'):
+            _tmp = _envoke(['git log -1 %s' % ans.split()[-1]])
+            print _tmp
+            raw_input('Any key to continue...')
+            continue
+        elif '' == ans:
+            _until = _since
+            _since += _record_number
+            continue
+        else:
+            return ans
+#get file differences between two versions
+def _get_version_range(with_previous_version = False):
+    if with_previous_version is True:
+        _result = GITInfo(srv = 'gif', param = ['gif', '2'])
+        #obtain the base version string from the output
+        _base_version = _result.split('\n')[1].split(' ')[-1]
+        #obtain the current version string from the output
+        _current_version = _result.split('\n')[5].split(' ')[-1]
+    else:
+        #get the version before the very first change is made
+        print(_red_ + "[+] Select the initial version that your changes are based on" + _end_)
+        _base_version = _get_version(since = 4)
+        print(_red_ + "[+] Select the new version that has your changes" + _end_)
+        _current_version = _get_version(since = 4)
+    _version_str = _base_version + '..' +_current_version
+    #list all changed files
+    _file_list = GITStatus('gstv', ['gst', _version_str])
+    print(_file_list)
+    _tmp = _get_answer(prompt = 'Are the files that you changed? [y/N]',
+                       help = '')
+    if _tmp is 'N' or _tmp is 'n':
+        return None, None
+    else:
+        return _file_list, _version_str
+
 #change to a local branch
 def _switch_branch(isremote = False):
     _cmd = 'git branch'
@@ -422,7 +615,7 @@ def _check_git_path():
     _tmp = _envoke(['git rev-parse --git-dir'])
     if 'fatal: Not a git repository' in _tmp:
         print("It seems you are not in a git repository...")
-        sys.exit()
+        _exit()
 
 #get a branch list
 def _get_branch_list():
@@ -458,6 +651,10 @@ def _get_path_to_remote_branch():
 #exit with error
 def _exit_with_error():
     print("Exit with error")
+    sys.exit()
+
+#exit with error
+def _exit():
     sys.exit()
 
 #return message for the config item missing error
@@ -546,8 +743,15 @@ def status_branch_cmd(remotebranch):
 def status_cmd(param):
     return 'git status ' % param
 
+# command to generate a patch with given version string
+def patch_cmd(param):
+    return 'git format-patch -k --stdout %(ver_string)s > /tmp/backup.patch' %\
+               {'ver_string': param}
+
 CALL_TABLE = { 'gst': GITStatus,
-               'gsw': GITSwitch
+               'gsw': GITSwitch,
+               'gif': GITInfo,
+               'gbu': GITBackup
              }
 
 if __name__ == '__main__':
@@ -564,16 +768,22 @@ if __name__ == '__main__':
 
     #a major service will always be a 3-character key word
     if service == 'ghelp':
-        if len(sys.argv) == 2:
+        try:
             print(CALL_TABLE[sys.argv[1][:3]].__doc__)
-        else:
+        except Exception:
             print(__doc__)
     else:
+        if len(sys.argv) == 2 and sys.argv[1] == '?':
+            print(CALL_TABLE[service[:3]].__doc__)
+            _exit()
         try:
             result = CALL_TABLE[service[:3]](service[3:], sys.argv)
             print(result)
-        except ValueError:
+        except KeyError:
             GITSetup()
+        #except Exception:
+        #    print("unhandled error, please check your inputs")
+
     """
     elif real_cmd == 'gco':
         GITClone(real_cmd, sys.argv[1:])
@@ -613,19 +823,6 @@ if __name__ == '__main__':
             GITShare( cmd = real_cmd, his_email = sys.argv[1], his_branch = sys.argv[2] )
         else:
             GITShare( cmd = real_cmd )
-    elif real_cmd.startswith('gif'):
-        #check if we are in a valid git repository
-        _check_git_path()
-        if len(sys.argv) == 3:
-            print(GITInfo(since = sys.argv[1],
-                          until = sys.argv[2],
-                          cmd = real_cmd))
-        if len(sys.argv) == 2:
-            print(GITInfo(num = sys.argv[1],
-                          cmd = real_cmd))
-        else:
-            print(GITInfo(num = 1,
-                          cmd = real_cmd))
     elif real_cmd == 'gpp':
         #check if we are in a valid git repository
         _check_git_path()
