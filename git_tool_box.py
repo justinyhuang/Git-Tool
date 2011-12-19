@@ -371,11 +371,10 @@ def GITBackup(srv, param):
     _ans = _get_answer(prompt = 'Backup the changes to a patch also? [y/N]',
                        help = "say y or Y if you like to make a patch file for the change")
     if _ans == 'y' or _ans == 'Y':
-        _file_list, _version_str = _get_version_range(with_previous_version = False)
+        _file_list, _version_str = _get_version_range(with_previous_version = True)
         if _file_list is None or _version_str is None:
             _exit_with_error();
-        _tmp = _envoke([status_cmd(_version_str)])
-        print("done")
+        _tmp = _envoke([patch_cmd(_version_str)])
         _ans = _get_answer(prompt = 'where to store the patch file?')
         _target_dir=os.path.expanduser(_ans)
         if not os.path.isdir(_target_dir):
@@ -383,14 +382,15 @@ def GITBackup(srv, param):
                             help = 'I will try my best to create the directory/ies.\
                                     \nWould you like me to do that for you?')
             if ans == 'n' or ans == 'N':
-                print('OK, see you later')
-                return
+                _exit()
             else:
                 os.makedirs(_target_dir)
         _envoke(['mv /tmp/backup.patch ' + _target_dir +
                  '/backup.%(verstr)s.patch ' % {'verstr': _version_str}])
-        print("back up has been saved as " + _target_dir +
-              '/backup.%(verstr)s.patch ' % {'verstr': _version_str})
+        return "back up has been saved as " + _target_dir +\
+              '/backup.%(verstr)s.patch ' % {'verstr': _version_str}
+    _exit()
+
 #setup the environment for first use
 def GITSetup():
     ans=_get_answer(prompt = 'Would you like to setup GITTool? [y/N]',
@@ -499,12 +499,12 @@ def _set_branch_config(branch_from):
                 ])
 
 #prompt the user a list of versions and ask for a selected version
-def _get_version(since = 7, until = 0):
+def _get_version(since = '7', until = '0'):
     _since = since
     _until = until
     _record_number = since
     while True:
-        _logs = GITInfo(since = _since, until = _until)
+        _logs = GITInfo(srv = 'gif', param = ['gif', _since, _until])
         print(_logs)
         ans = _get_answer(help = 'Type:\n' +
                                  '    ID of the version you want, or\n' +
@@ -531,11 +531,12 @@ def _get_version_range(with_previous_version = False):
         _current_version = _result.split('\n')[5].split(' ')[-1]
     else:
         #get the version before the very first change is made
-        print(_red_ + "[+] Select the initial version that your changes are based on" + _end_)
+        print("[+] Select the" + color['red'] + " initial " + color['end'] + "version that your changes are based on")
         _base_version = _get_version(since = 4)
-        print(_red_ + "[+] Select the new version that has your changes" + _end_)
+        print("[+] Select the" + color['red'] + " new " + color['end'] + "version that your changes are based on")
         _current_version = _get_version(since = 4)
-    _version_str = _base_version + '..' +_current_version
+    #_version_str = _base_version + '..' +_current_version
+    _version_str = _current_version + '..' + _base_version
     #list all changed files
     _file_list = GITStatus('gstv', ['gst', _version_str])
     print(_file_list)
@@ -579,7 +580,7 @@ def _switch_branch(isremote = False):
         return False
     _tmp = ''
     for line in _list:
-        if line != '' and _ans == line.split()[-1]:
+        if line != '' and _selected_branch == line.split()[-1]:
             if True == isremote:
                 _local_branch = _get_answer(prompt = "Give a name for the new local branch:",
                                             help = "if give no name you will be on " +
@@ -599,14 +600,14 @@ def _switch_branch(isremote = False):
     #we are here because the selected branch is not in the list
     #create a new branch with the name given
     _previous_branch = _get_current_branch()
-    _tmp = _envoke(['git branch %s'%ans])
-    _tmp = _envoke(['git checkout %s'%ans])
+    _tmp = _envoke(['git branch %s' % _selected_branch])
+    _tmp = _envoke(['git checkout %s' % _selected_branch])
     _set_branch_config(branch_from = _previous_branch)
     _result = 'branch ' +\
               color['red'] + _selected_branch + color['end'] +\
               ' has been created and you have been switched to this branch'
     #this is a new branch, set the config properly
-    _result += 'and its config is set based on' +\
+    _result += 'and its config is set based on ' +\
                color['red'] + _selected_branch + color['end']
     return _result
 
