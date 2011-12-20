@@ -8,6 +8,7 @@ Available services:
    gst: Git STatus, list modified/added/removed files between versions/branches
    gsw: Git Switch, switch/create to a branch/tag, remotely or locally
    gdi: Git DIff, compare file/s between versions/branches
+   ghelp: help info for GITUtil
 Proposed services:
    gco: Git ClOne/CheckOut, to get a new sandbox
    grs: Git ReStore, go back to a previous backup version
@@ -16,7 +17,6 @@ Proposed services:
    gpp: Git Prepare, set up a new sandbox with all your changes inside
         *This is for preparing a clean sandbox to submit for integration
    gfl: Git File, to fetch a file from a version
-   ghelp: help info for GITUtil
 """
 import os
 import re
@@ -51,6 +51,7 @@ def allperm(inputstr):
 SERVICES = [
                #'gco',
                'gst',
+               'gcf',
                ['gst' + x for x in allperm('dr')], #combination of 'd', 'r'
                ['gst' + x for x in allperm('br')], #combination of 'b', 'r'
                ['gst' + x for x in allperm('vr')], #combination of 'v', 'r'
@@ -190,9 +191,15 @@ def GITStatus(srv, param):
     if _isversion or _isbranch or _isremote:
         if _isremote is True or _isbranch is True:
             _comp2, _comp1 = _branch_name, _current_branch
-        elif _isversion is True:
+        elif '..' in _version_str:
             _comp2, _comp1 = _version_str.split('..')
+        elif re.search('^.[0-9a-fA-F]*$', _version_str) is not None:
+            _comp2 = _version_str
+            _changed_but_not_commited_sign = ' *' if _get_changed_uncommited_file_list() is not None\
+                                                  else ''
+            _comp1 = _get_current_version() + _changed_but_not_commited_sign
         else:
+            #the tool is not able to get the compared versions
             _comp2 = _comp1 = 'UNKNOWN'
 
         if _tmp_result is None or _tmp_result.strip(' ') is None:
@@ -398,7 +405,6 @@ def GITBackup(srv, param):
               '/backup.%(verstr)s.patch ' % {'verstr': _version_str}
     _exit()
 
-#def GITDiff(isremote, isgui, isversion, isfile, versions, file):
 def GITDiff(srv, param):
     """ gdi
         gdi(r)(v)(f)(1/2): show the files' differences in many ways
@@ -431,11 +437,15 @@ def GITDiff(srv, param):
     _isversion = ('v' in srv)
     _isfile = ('f' in srv)
     #look for the user preferred diff tool
-    _difftool = _get_diff_tool('first')
+    _difftool = None
     if '1' in srv:
         _difftool = _get_diff_tool('second')
     elif '2' in srv:
         _difftool = _get_diff_tool('third')
+    if _difftool is None:
+        #try to get the default diff tool in this case
+        _difftool = _get_diff_tool('first')
+
     #look for the version string
     if _isversion:
         _versions = None
@@ -467,7 +477,7 @@ def GITDiff(srv, param):
             if '?' == _versions:
                 #allow user to select versions on the fly
                 _versions = _get_version()
-            _cmd += ' %(versions)s' % {'versions': versions}
+            _cmd += ' %(versions)s' % {'versions': _versions}
     else:
         _cmd += ' %s' % _get_remote_branch()
     #handle when a file is given
@@ -480,6 +490,39 @@ def GITDiff(srv, param):
     else:
         _tmp = _envoke([_cmd])
     _exit()
+
+def GITConfig(srv, param):
+    """ gcf
+        show the configuration of the current repository and the global settings.
+        it is also possible to modify the values interatively with this tool.
+        available items:
+            branch name
+            remote value
+            merge value
+    """
+    _check_git_path()
+    #local settings
+    _current_branch = _get_current_branch()
+    _current_branch_remote = _get_remote_value(_current_branch)
+    _current_branch_merge = _get_merge_value(_current_branch)
+    _remote_branch = _get_remote_branch()
+    #global settings
+    _first_diff_tool = _get_diff_tool('first')
+    _second_diff_tool = _get_diff_tool('second')
+    _third_diff_tool = _get_diff_tool('third')
+    #make up the output
+    _ret = ""
+    _ret += color['yellow'] + "---Local Settings---\n" + color['end']
+    _ret += "current branch: %s\n" % _current_branch
+    _ret += "remote value: %s\n" % _current_branch_remote
+    _ret += "merge value: %s\n" % _current_branch_merge
+    _ret += "remote branch: %s\n" % _remote_branch
+    _ret += color['yellow'] + "---Global Settings---\n" + color['end']
+    _ret += "1st diff tool: %s\n" % _first_diff_tool
+    _ret += "2nd diff tool: %s\n" % _second_diff_tool
+    _ret += "3rd diff tool: %s\n" % _third_diff_tool
+    return _ret
+
 
 #setup the environment for first use
 def GITSetup():
@@ -637,7 +680,6 @@ def _get_version_range(with_previous_version = False):
         _base_version = _get_version(since = 4)
         print("[+] Select the" + color['red'] + " new " + color['end'] + "version that your changes are based on")
         _current_version = _get_version(since = 4)
-    #_version_str = _base_version + '..' +_current_version
     _version_str = _current_version + '..' + _base_version
     #list all changed files
     _file_list = GITStatus('v', ['gst', _version_str])
@@ -727,19 +769,31 @@ def _get_branch_list():
 
 #based on git branch, to get the current git branch
 def _get_current_branch():
-    _branches = _envoke(['git branch --no-color 2> /dev/null']).split('\n')
-    _current_branch = [branch for branch in _branches if branch.startswith('*')][0]
-    _current_branch = _current_branch.split()[1]
+    _current_branch = _envoke(['git status -sb -u no']).split()[-1]
     return _current_branch
+
+#get changed but not yet commited files
+def _get_changed_uncommited_file_list():
+    _command = "git diff --name-only"
+    return _envoke([_command])
+
+#get the current version string
+def _get_current_version():
+    _command = "git log -1 --format='%h'"
+    return _envoke([_command])[:-1]
 
 #based on git config, to get the local path in the repository where remote branch 
 #is stored.
-def _get_path_to_remote_branch():
+def _get_remote_branch():
+    #show diff between the local branch's HEAD and the remote branch's HEAD
+    #get the remote repository from the config file
     #1. get the current branch
     _current_branch = _get_current_branch()
     #2. read the remote and merge value from the current branch section
     _remote = _get_remote_value(_current_branch)
     _merge = _get_merge_value(_current_branch)
+    if _remote is None or _merge is None:
+        raise ConfigItemMissing
     #3. check if the remote value references any remote section, e.g. origin
     try:
         _r_refspec, _l_refspec = _get_remote_refspec(_remote)
@@ -749,7 +803,11 @@ def _get_path_to_remote_branch():
         return _merge
     #4. now that the _l_refspec contains most part of the path,
     #get the remote branch name from the merge value 
-    return _l_refspec + _merge.split('/')[-1]
+    if _l_refspec.endswith('*'):
+        _path_to_remote = _l_refspec[:-1] + _merge.split('/')[-1]
+    else:
+        _path_to_remote = _l_refspec
+    return _path_to_remote
 
 #exit with error
 def _exit_with_error():
@@ -790,10 +848,7 @@ def _get_remote_refspec(name):
     _tmp = _tmp[:-1]
     _remote, _local = _tmp.split(':')
     #in case there is no * in _remote or _local.
-    _remote = _remote.strip('*+')
-    _local = _local.strip('*')
-    _remote = _remote[5:] #remove the 'refs/'
-    _local = _local[5:] #remove the 'refs/'
+    _remote = _remote.strip('+')
     return _remote, _local
 
 #command to get the merge branch from config file, based on the given current branch name
@@ -817,12 +872,7 @@ def _get_remote_value(curbranch):
 def _get_diff_tool(selection):
     _command = 'git config --global difftool.%s' % selection
     _tmp = _envoke([_command])
-    if _tmp is None:
-        #try to get the default diff tool in this case
-        _tmp = _envoke(['git config --global difftool.first'])
-        if _tmp is None:
-            _exit_with_error()
-    return _tmp[:-1]
+    return _tmp[:-1] if _tmp is not None else None
 #command to set the diff tool value
 def _set_diff_tool(selection, tool):
     _command = 'git config --global difftool.%(selection)s %(tool)s' %\
@@ -832,24 +882,6 @@ def _set_diff_tool(selection, tool):
 def status_version_cmd(verstr):
     return "git diff %(version_str)s --name-only" %\
                {'version_str': verstr}
-
-def _get_remote_branch():
-    #show diff between the local branch's HEAD and the remote branch's HEAD
-    #get the remote repository from the config file
-    _current_branch = _get_current_branch()
-    _merge = _get_merge_value(_current_branch)
-    if _merge is None:
-        raise ConfigItemMissing
-    else:
-        _remote = _get_remote_value(_current_branch)
-        if _remote is None:
-            raise ConfigItemMissing
-        else:
-            if _remote == '.':
-                _remote = ''
-            else:
-                _remote = '/' + _remote
-            return _get_path_to_remote_branch()
 
 #command to do git diff between the local branch HEAD and the remote branch HEAD
 def status_branch_cmd(remotebranch):
@@ -869,7 +901,8 @@ CALL_TABLE = { 'gst': GITStatus,
                'gsw': GITSwitch,
                'gif': GITInfo,
                'gbu': GITBackup,
-               'gdi': GITDiff
+               'gdi': GITDiff,
+               'gcf': GITConfig
              }
 
 if __name__ == '__main__':
@@ -899,32 +932,13 @@ if __name__ == '__main__':
             print(result)
         except KeyError:
             GITSetup()
+        #enable the error hiding for released version
         #except Exception:
         #    print("unhandled error, please check your inputs")
 
     """
     elif real_cmd == 'gco':
         GITClone(real_cmd, sys.argv[1:])
-    elif real_cmd.startswith('gdi'):
-        #check if we are in a valid git repository
-        _check_git_path()
-        try:
-            GITDiff(isremote = ('r' in real_cmd),
-                    isgui = ('u' in real_cmd),
-                    isversion = ('v' in real_cmd),
-                    isfile = ('f' in real_cmd),
-                    versions = sys.argv[1] if ('v' in real_cmd) else '',
-                    file = sys.argv[2] if ('f' in real_cmd and 'v' in real_cmd)
-                                       else (sys.argv[1] if ('f' in real_cmd) else ''))
-        except IndexError:
-            print("ERROR: unmatched command and input parameters")
-    elif real_cmd.startswith('gsw'):
-        #check if we are in a valid git repository
-        _check_git_path()
-        GITSwitch(real_cmd, sys.argv[1:])
-    elif real_cmd == 'gbu':
-        #check if we are in a valid git repository
-        _check_git_path()
         GITBackup()
     elif real_cmd == 'grs':
         #check if we are in a valid git repository
