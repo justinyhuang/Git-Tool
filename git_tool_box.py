@@ -3,19 +3,19 @@
 GitBox - a utility set for easier use of git
 
 Available services:
+   gbu: Git BackUp, commit changes in the working copy to local repository
+   gif: Git InFo, shows basic information of the current version
    gst: Git STatus, list modified/added/removed files between versions/branches
    gsw: Git Switch, switch/create to a branch/tag, remotely or locally
-   gif: Git InFo, shows basic information of the current version
+   gdi: Git DIff, compare file/s between versions/branches
 Proposed services:
    gco: Git ClOne/CheckOut, to get a new sandbox
-   gbu: Git BackUp, commit changes in the working copy to local repository
    grs: Git ReStore, go back to a previous backup version
    gpl: Git PulL, pull lastest version from the remote repository
    gsh: Git SHare, to share a branch with others
    gpp: Git Prepare, set up a new sandbox with all your changes inside
         *This is for preparing a clean sandbox to submit for integration
    gfl: Git File, to fetch a file from a version
-   gdi: Git DIff, compare file/s between versions/branches
    ghelp: help info for GITUtil
 """
 import os
@@ -51,7 +51,9 @@ def allperm(inputstr):
 SERVICES = [
                #'gco',
                'gst',
-               ['gst' + x for x in allperm('drvb')], #combination of 'd', 'r', 'v', 'b'
+               ['gst' + x for x in allperm('dr')], #combination of 'd', 'r'
+               ['gst' + x for x in allperm('br')], #combination of 'b', 'r'
+               ['gst' + x for x in allperm('vr')], #combination of 'v', 'r'
                'gif',
                ['gif' + x for x in allperm('t')],
                'gbu',
@@ -62,8 +64,10 @@ SERVICES = [
                ['gsw' + x for x in allperm('rt')], #combination of 'r', 't'
                #'gpl',
                #'gfl',
-               #'gdi',
-               #[ 'gdi' + x for x in allperm('urvf')], # combination of 'u','r','v','f'
+               'gdi',
+               [ 'gdi' + x for x in allperm('rvf')], # combination of 'r','v','f'
+               [ 'gdi' + x for x in allperm('1rvf')], # combination of 'r','v','f', '1'
+               [ 'gdi' + x for x in allperm('2rvf')], # combination of 'r','v','f', '2'
                #'gpp',
                'ghelp'
            ]
@@ -126,17 +130,20 @@ def GITStatus(srv, param):
               local repository) with that of its remote branch (REMOTE_BRANCH
               by default)
 
-              with (v), the tool will show you a list of files that are changed
+              with (v), the tool will show a list of files that are changed
               across different versions.
               you need to provide a parameter to specify the version(s).
               something like "<version sha1>..<version sha2>", or
                              "<version sha>", or other git valid version strings
               will work.
 
-              with (d), the tool will only show you a list of changed files in the
+              with (b), the tool will show a list of files that are changed 
+              between the HEAD of two local branches.
+
+              with (d), the tool will only show a list of changed files in the
               current directory
 
-              possible combinations are: r, v, d, rd, vd
+              possible combinations are: r, rd, v, vd, b, bd, d
     """
     _check_git_path()
     _isbranch = ('b' in srv)
@@ -391,47 +398,142 @@ def GITBackup(srv, param):
               '/backup.%(verstr)s.patch ' % {'verstr': _version_str}
     _exit()
 
+#def GITDiff(isremote, isgui, isversion, isfile, versions, file):
+def GITDiff(srv, param):
+    """ gdi
+        gdi(r)(v)(f)(1/2): show the files' differences in many ways
+                with(r) to show the diff between the working copy and the remote
+                   master
+                without (r) to show the diff between local versions/branches
+                   branch HEAD(configurable)
+                with (v) to show the diff between local versions/branches
+                   do 'gdiv <version1>..<version2>' to compare between two versions
+                   do 'gdiv <version>' to compare between the working copy with
+                   'version'
+                   do 'gdiv ?' to pick a version from the version list and compare
+                   with the local copy.
+                   NOTE: comparing can only be between local versions
+                with (f) to compare the difference of a file between two versions
+                   combined with 'vl', do 'gdivlf <version1>..<version2> <filename>' or
+                   do 'gdivlf <version1> <filename>'
+                   to compare between the local copy and the remote HEAD:
+                   do 'gdif <filename>'
+                with (1/2/3) to diff with a difftool that is configured when you setup
+                   this tool. this is useful to switch between ascii tool like vimdiff
+                   and gui tools like meld, beyondcompare
+                   do a 'gdi' to use the default difftool
+                   do a 'gdi1' to use the secondary difftool
+                   do a 'gdi2' to use another difftool
+
+    """
+    _check_git_path()
+    _isremote = ('r' in srv)
+    _isversion = ('v' in srv)
+    _isfile = ('f' in srv)
+    #look for the user preferred diff tool
+    _difftool = _get_diff_tool('first')
+    if '1' in srv:
+        _difftool = _get_diff_tool('second')
+    elif '2' in srv:
+        _difftool = _get_diff_tool('third')
+    #look for the version string
+    if _isversion:
+        _versions = None
+        for x in param[1:]:
+            if re.search('^.[0-9a-fA-F]*\.\..[0-9a-fA-F]*$', x) is not None:
+                #this seems like a <ver>..<ver> string
+                _versions = x
+                break
+        if _versions is None:
+            #cannot find a valid version string
+            _exit_with_error()
+    #look for a given file
+    if _isfile:
+        _file = None
+        for x in param[1:]:
+            #in this way the user doesn't have to remember the order of the
+            #input parameters
+            if os.path.isfile(x) is True:
+                _file = x
+                break
+        if _file is None:
+            #cannot find a valid file name in the param
+            _exit_with_error()
+    _cmd = 'git difftool -t %s' % _difftool
+    #handle remote/local diff operation
+    if _isremote == False:
+        # only support comparison between versions with local diff
+        if _isversion == True:
+            if '?' == _versions:
+                #allow user to select versions on the fly
+                _versions = _get_version()
+            _cmd += ' %(versions)s' % {'versions': versions}
+    else:
+        _cmd += ' %s' % _get_remote_branch()
+    #handle when a file is given
+    if _isfile == True:
+        _cmd += ' %s' % _file
+    #for vim it appears we need to invoke it via os.system to make it
+    #work correctly
+    if _difftool == 'vimdiff':
+        os.system(_cmd)
+    else:
+        _tmp = _envoke([_cmd])
+    _exit()
+
 #setup the environment for first use
 def GITSetup():
     ans=_get_answer(prompt = 'Would you like to setup GITTool? [y/N]',
                     help = 'This will simply create a bunch of symbol links for you.\
-                            \nSo would you like to setup GITTool? [y/N]')
+                          \nSo would you like to setup GITTool? [y/N]')
     if 'y' == ans or 'Y' == ans:
-       print("Please specify where you would like to put the GITTool facilities")
-       print("[eg. '~/bin/GTool', '/tools']")
-       print("\nMake sure the path is in your PATH variable")
-       ans = _get_answer(help = "The GitUtilTool works based on" +
-                                color['red'] + " A LOT OF " + color['end'] +
-                                "small link files\n" +
-                                "It's suggested to make a directory for the tool in your bin directory")
-       _target_dir=os.path.expanduser(ans)
-       if not os.path.isdir(_target_dir):
-           ans=_get_answer(prompt = "The path doesn't seem to exist. Try to make the directory? [Y/n]",
-                           help = "I will try my best to create the directory/ies.\
-                                   \nWould you like me to do that for you?")
-           if ans == 'n' or ans == 'N':
-               print("OK, see you later")
-               return
+        #setup the difftools
+        _ans = _get_answer(prompt = "Please specify your first choice of diff tool:",
+                           help = "it will be used as the default tool when diff")
+        _set_diff_tool('first', _ans)
+        _ans = _get_answer(prompt = "and your second choice of diff tool?",
+                           help = "it will be used as the secondary tool when diff.\
+                                 \nleave it blank if you don't have a secondary diff tool")
+        _set_diff_tool('second', _ans)
+        _ans = _get_answer(prompt = "and your third choice of diff tool?",
+                           help = "it will be used as the third tool when diff\
+                                 \nleave it blank if you don't have a secondary diff tool")
+        _set_diff_tool('third', _ans)
+        #setup the symbolic links
+        print("Please specify where you would like to put the GITTool facilities")
+        print("[eg. '~/bin/GTool', '/tools']")
+        print("\nMake sure the path is in your PATH variable")
+        ans = _get_answer(help = "The GitUtilTool works based on" +
+                                 color['red'] + " A LOT OF " + color['end'] +
+                                 "small link files\n" +
+                                 "It's suggested to make a directory for the tool in your bin directory")
+        _target_dir=os.path.expanduser(ans)
+        if not os.path.isdir(_target_dir):
+            ans=_get_answer(prompt = "The path doesn't seem to exist. Try to make the directory? [Y/n]",
+                            help = "I will try my best to create the directory/ies.\
+                                    \nWould you like me to do that for you?")
+            if ans == 'n' or ans == 'N':
+                print("OK, see you later")
+                return
+            else:
+                os.makedirs(_target_dir)
+        _source_path = os.path.dirname(__file__)
+        for service in SERVICES:
+           _source = os.path.relpath(_source_path, _target_dir) +\
+                     "/" +\
+                     os.path.basename(__file__)
+           if type(service) == list:
+               #this is a nested list, right now we support 2-level nested list
+               for sub_service in service:
+                   _envoke(["ln -s %(source)s %(link)s" %
+                           {'source' : _source,
+                            'link' : _target_dir + '/' + sub_service}])
            else:
-               os.makedirs(_target_dir)
-       _source_path = os.path.dirname(__file__)
-       for service in SERVICES:
-          _source = os.path.relpath(_source_path, _target_dir) +\
-                    "/" +\
-                    os.path.basename(__file__)
-          if type(service) == list:
-              #this is a nested list, right now we support 2-level nested list
-              for sub_service in service:
-                  _envoke(["ln -s %(source)s %(link)s" %
-                          {'source' : _source,
-                           'link' : _target_dir + '/' + sub_service}])
-          else:
-              _envoke(["ln -s %(source)s %(link)s" %
-                      {'source' : _source,
-                       'link' : _target_dir+'/'+service}])
+               _envoke(["ln -s %(source)s %(link)s" %
+                       {'source' : _source,
+                        'link' : _target_dir+'/'+service}])
 
-       print("done.")
-       print("try ghelp for more info")
+        print("done.\ntry ghelp for more info")
 
 #-----internal helpper functions-----
 #helper function to invoke bash commands
@@ -504,7 +606,7 @@ def _get_version(since = '7', until = '0'):
     _until = until
     _record_number = since
     while True:
-        _logs = GITInfo(srv = 'gif', param = ['gif', _since, _until])
+        _logs = GITInfo(srv = '', param = ['gif', _since, _until])
         print(_logs)
         ans = _get_answer(help = 'Type:\n' +
                                  '    ID of the version you want, or\n' +
@@ -524,7 +626,7 @@ def _get_version(since = '7', until = '0'):
 #get file differences between two versions
 def _get_version_range(with_previous_version = False):
     if with_previous_version is True:
-        _result = GITInfo(srv = 'gif', param = ['gif', '2'])
+        _result = GITInfo(srv = '', param = ['gif', '2'])
         #obtain the base version string from the output
         _base_version = _result.split('\n')[1].split(' ')[-1]
         #obtain the current version string from the output
@@ -538,7 +640,7 @@ def _get_version_range(with_previous_version = False):
     #_version_str = _base_version + '..' +_current_version
     _version_str = _current_version + '..' + _base_version
     #list all changed files
-    _file_list = GITStatus('gstv', ['gst', _version_str])
+    _file_list = GITStatus('v', ['gst', _version_str])
     print(_file_list)
     _tmp = _get_answer(prompt = 'Are the files that you changed? [y/N]',
                        help = '')
@@ -711,7 +813,21 @@ def _get_remote_value(curbranch):
     if _tmp is None:
         raise ConfigItemMissing
     return _tmp[:-1]
-
+#command to get the diff tool value
+def _get_diff_tool(selection):
+    _command = 'git config --global difftool.%s' % selection
+    _tmp = _envoke([_command])
+    if _tmp is None:
+        #try to get the default diff tool in this case
+        _tmp = _envoke(['git config --global difftool.first'])
+        if _tmp is None:
+            _exit_with_error()
+    return _tmp[:-1]
+#command to set the diff tool value
+def _set_diff_tool(selection, tool):
+    _command = 'git config --global difftool.%(selection)s %(tool)s' %\
+            {'selection':selection, 'tool':tool}
+    _tmp = _envoke([_command])
 #command to do git diff between two versions
 def status_version_cmd(verstr):
     return "git diff %(version_str)s --name-only" %\
@@ -752,7 +868,8 @@ def patch_cmd(param):
 CALL_TABLE = { 'gst': GITStatus,
                'gsw': GITSwitch,
                'gif': GITInfo,
-               'gbu': GITBackup
+               'gbu': GITBackup,
+               'gdi': GITDiff
              }
 
 if __name__ == '__main__':
