@@ -1,1 +1,1 @@
-This is the initial commit of Git Tool.
+The GitTool is a python wrapper around git. Git, though powerful and popular, in most cases is too complicated to use.
