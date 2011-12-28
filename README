@@ -1,1 +1,78 @@
-The GitTool is a python wrapper around git. Git, though powerful and popular, in most cases is too complicated to use.
+Git, though powerful and popular, in most cases is too complicated to use. When I
+need to check what files are changed but not committed, I have to use 'git status';
+while I'd like to check what files are changed between the current branch and the
+master branch, I will have to use 'git diff', and with a lengthy parameter list. :(
+
+Why use different command for similar requests?
+Why long command when the need is simple?
+This is why GitTool is here.
+GitTool tries to simplify the use of git by wrapping git with a python script and
+roviding simple yet powerful interfaces to the user. To make using git a bit
+easier is what GitTool is for.
+
+TARGET USER
+GitTool is specialized for those who need to use git everyday but don't like to master the tool. These users only need git to help managing my change sets of the code, as well as communicating with others based on the same repository and history. Spending time to know 1001 ways of using git is unacceptable.
+
+FEATURES
+- Easy, short yet powerful commands. In most cases a GitTool command varies from 3 to 5 characters. Very few arguments are required. Some examples are given below as comparison:
+   Git Command                         GitTool Command
+   git diff 
+   git log
+   git fetch
+- Graphic git history presentation. A slightly better graphical presentation compared to those by other tools like gitk.
+- View configuration similar to ClearCase. GitTool provides a means to select files from different commits/versions, yet with some version control capabilities.
+
+INSTALL
+"Why do I need to install?"
+GitTool works in a way similar to 'busybox'. That is, many symbolic links pointed to
+the same executable. It needs to know your bin directory to put the symbolic link
+files. GitTool have to backup your .gitconfig file before adding GitTool specific
+settings later. It also will ask for your preference to using the tool after setup,
+for example your choices of diff tools.
+
+Installing GitTool is simple. Just run 'git_tool_box.py' directly and answer
+the questions along the setup process. The tool will setup itself and ready for use.
+
+COLORED TEXT
+During the setup process, GitTool asks if colored text is supported in your environment,
+with an example of colored text. We recommend saying yes, as many GitTool features
+depend on the ability to show texts in different colors.
+
+PROMPT MODE
+There are many cases where you will be asked for choices or answers when GitTool shows
+a line and waits for your input with a prompt (by default it is a ':>' sign). This is
+called the Prompt Mode in GitTool.
+GitTool enters the Prompt Mode when user intervention is required, and it tries to ask
+questions in the shortest way. Because as you use the tool, you become familiar with
+what it is asking. For new users, one can always try the
+
+   *help command*
+   When in Prompt Mode, type '\h' to get help messages if there is any. In you have
+   colored text enabled when setting up GitTool, there is an easy way to tell if help
+   message is available:
+   There is help messages if the prompt sign changes color.(default color with help is
+   light blue)
+
+Or if you decide to quit instead of answering the question, use the
+
+   *exit command*
+   When in Prompt Mode, type '\e' to safely exiting GitTool.
+
+There is yet another command that is useful in use cases like being shown a list of
+branches and you would like to delete one of them. That is the
+
+   *delete command*
+   When in the Prompt Mode and a lost of items are shown, type '\d' followed by the index
+   of the item to delete it, no matter what the item is: a branch, a history entry or
+   a file shown in a diff-file list (Right! That could be 'git checkout', or 'git reset',
+   or whatever effort you would pay to reverse a change you made to a file)
+
+HOWTO GET HELP
+After installation, 'ghelp' will show you a list of available services with a brief
+description. Use 'ghelp <command>' for detailed information of the corresponding command.
+You can also put a '?' after the command to get the help message, which is equal to
+'ghelp <command>'
+
+I DONT LIKE IT
+'git_tool_box.py clean' will help you remove GitTool and recover your .gitconfig file.
+After that 'rm -fr <dir of GitTool>' and you won't see GitTool anymore. But...why?

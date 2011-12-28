@@ -4,18 +4,20 @@ GitBox - a utility set for easier use of git
 
 Available services:
    gbu: Git BackUp, commit changes in the working copy to local repository
-   ggt: Git GeT, to get a copy of the target repository
+   gpt: Git PuT, to put the local changes to the remote repository
    gif: Git InFo, shows basic information of the current version
    gst: Git STatus, list modified/added/removed files between versions/branches
    gsw: Git Switch, switch/create to a branch/tag, remotely or locally
    gdi: Git DIff, compare file/s between versions/branches
    ghelp: help info for GITUtil
 Proposed services:
+   ggt: Git GeT, to get a copy of the target repository
    grs: Git ReStore, go back to a previous backup version
    gpl: Git PulL, pull lastest version from the remote repository
    gpp: Git Prepare, set up a new sandbox with all your changes inside
         *This is for preparing a clean sandbox to submit for integration
    gfl: Git File, to fetch a file from a version
+   gvw: should be a wonderful feature that borrow from clearcase, details to be considered
 """
 import os
 import re
@@ -29,6 +31,12 @@ from optparse import OptionParser
 """
 TODO: realize ascii graph showing version trees in terminal
 TODO: think about a mechanism to handle unintensional interruption during, say, committing
+TODO: ask user in GITSetup if colors are supported in his environment, better print some colored texts
+TODO: implement the \d command of Prompt Mode
+TODO: make it real that with the delete command one can delete a branch or a history entry.
+TODO: implement the feature to revert a file change with the delete command based on a gst output. User should be able to invoke a gdi before determining to revert the file change.
+TODO: to make use of the local config file, to track the version of each file, so that we can achieve a 'view' in git like that in clearcase: files can be picked from different versions and make a view
+TODO: to put indexes in the graphical presentation, so that one can easily reference a version by the index instead of the hash value.
 """
 
 #-------------------GLOBAL SETTINGS-------------------
@@ -49,13 +57,13 @@ def allperm(inputstr):
 
 SERVICES = [
                'ggt',
+               'gpt',
                'gst',
                'gcf',
                ['gst' + x for x in allperm('dr')], #combination of 'd', 'r'
                ['gst' + x for x in allperm('br')], #combination of 'b', 'r'
                ['gst' + x for x in allperm('vr')], #combination of 'v', 'r'
-               'gif',
-               ['gif' + x for x in allperm('t')],
+               'gif', 'gift', 'gifg',
                'gbu',
                #'grs',
                'gsw',
@@ -127,19 +135,24 @@ def GITGet(srv, param):
     """
     #1. check if only update the local is requested
     if _if_in_git_path() is True:
+        if _has_uncommited_files() is True:
+            print("There are still files unstaged/uncommited." +
+                  "Please use gbu to commit all your changes before" +
+                  "updating this repository")
+            _exit()
         #prompt if only need to update the current branch
         _ans = _get_answer(prompt = "Press Enter to update the current branch",
                            help = "any other input will lead you to a 'git clone', " +
                                   "or a 'git fetch' to get a new branch from remote repository")
         if _ans == '':
+            #update the current branch
             _update_local_branch()
-        _exit()
+            return "done"
     #2. get the source
     #print the list of known resources from the global config file
     _source_list = _get_source_list()
     _index = 0
-    _ifnew = False
-    _color = color.values()[:-1]
+    _color = color.values()
     for r in _source_list:
         #use different colors to differentiate the lines
         _item = _color[_index % len(_color)] + "%d  -  %s" % (_index, r) + _end_
@@ -147,12 +160,13 @@ def GITGet(srv, param):
         _index += 1
     #ask for an input
     _tmp = _get_answer(prompt = 'What source would you like to clone from',
-                       help = 'select the sourcesitory by the index number')
+                       help = 'select the source by the index number' +
+                              'or type in the repository/branch')
     #TODO: add support to allow deleting an entry
-    #TODO: add a record in the local config file, to remember the source link
-    #      so that the user will have a default option when fetch
+    #TODO: check if the local config merge and remote values are correct
     if re.match('^.\d*$', _tmp) is not None:
         #seems like a know source is selected
+        _ifnew = False
         _source = _source_list[int(_tmp)]
     else:
         #new source specified by the user?
@@ -162,30 +176,53 @@ def GITGet(srv, param):
     #with the given source, determine whether to clone or fetch the data
     if re.match('^git@.*:.*', _source) is not None:
         #this seems like a clone request
+        #need to consider if the user like to update but accidentally comes here
         _ifclone = True
         _cmd = clone_cmd(_source)
     else:
         #i believe this is a fetch request
+        if _if_in_git_path() is False:
+            return "Seem like you are trying to fetch a branch, but in no git reporitory" +\
+                  "You might consider issue the command in a repository..."
         _ifclone = False
         _branch_name = _source.split('/')[-1]
         #the local path is generated by replacing the 'refs/' at the front 
         #to 'refs/remotes/'
         _local_repo = _source.replace('refs/', 'refs/remotes/', 1)
         _cmd = fetch_origin_cmd(_source, _local_repo)
-    _tmp = _envoke([_cmd])
+    _tmp = _invoke([_cmd])
     if _ifclone is False:
         #it is a fetch
         #make a local branch and switch to the new branch
-        _tmp += _make_branch_link_to_local_repo(_branch_name, _local_repo.strip('refs/'))
+        _make_branch_link_to_local_repo(_branch_name, _local_repo[5:]) #skip the 'refs/'
     #4.update the global config file with the checked out source path
     if _ifnew is True:
         _add_to_source_list(_source)
     return _tmp
 
+def GITPut(srv, param):
+    """ gpt
+        put the local changes to a remote repository
+        the 'put' could be a direct 'git push', or an interface pointed to a customized
+        submit script
+    """
+    _url = _get_remote_url()
+    if _url is None:
+        _ans = _get_answer(prompt = "would you like to manually type in the url? [y/N]",
+                           help = "the url of the remote repository is not set in the config file.\n" +
+                                  "You have to tell where you'd like to push your changes, \n" +
+                                  "or exit to fix it in other means.")
+        if _ans == 'y' or _ans == 'Y':
+            _url = _get_answer(prompt = "url = ", help ='')
+        else:
+            _exit()
+    #do a push with the given url
+    pass
+
 def GITStatus(srv, param):
     """
     gst
-    show the status (what have been changed) of a working copy or a version
+    show the status (what have been changed) between repositories, branches or versions.
     gst(rvd): without (rvd), is equal to 'git status', showing the changed files
               between working copy and the HEAD of current local branch.
 
@@ -245,7 +282,7 @@ def GITStatus(srv, param):
         _cmd += ' -- ' + os.getcwd()
 
     #eventually invoke the command
-    _tmp_result = _envoke([_cmd])
+    _tmp_result = _invoke([_cmd])
 
     #prettify the outcome
     _final_str = ''
@@ -317,26 +354,27 @@ def GITSwitch(srv, param):
                     _cmd += '%(tag)s -b %(newbranch)s' %\
                             {'tag': _tname,
                              'newbranch': _branchname}
-            return _envoke([_cmd])
+            return _invoke([_cmd])
         except IndexError:
             return "ERROR: the command and the argument don't match."
 
 def GITInfo(srv, param):
     """gif
        to display the version/branch/tag info
-       gif(t): gif <number of versions to display>
-                   when no parameter is given, only the current version info will be shown
-               gif <since generation> <until generation>
-                   display all the versions between the since_generation and the until_generation
-                   e.g 'gif 3 0' will show you the versions from HEAD to the 3rd generation grand-parent of HEAD
-                       'gif 7 4' will show you the versions from the 4th generation grand-parent of HEAD to
-                       the 7th generation grand-parent of HEAD
-                   * the tool is smart enough even you put the since and until version in the other order =)
-               with (t) you will get the tag info if there is any.
-                   Note that fetching tag info would take a bit more time
+       gif(tg): gif <number of versions to display>
+                    when no parameter is given, only the current version info will be shown
+                gif <since generation> <until generation>
+                    display all the versions between the since_generation and the until_generation
+                    e.g 'gif 3 0' will show you the versions from HEAD to the 3rd generation grand-parent of HEAD
+                        'gif 7 4' will show you the versions from the 4th generation grand-parent of HEAD to
+                        the 7th generation grand-parent of HEAD
+                    * the tool is smart enough even you put the since and until version in the other order =)
+                with (t) you will get the tag info if there is any.
+                    Note that fetching tag info would take a bit more time
+                with (g) you will get an ascii based version tree expression #NOT YET REALIZED (i wonder if we need to have a real graphic presentation)
     """
     _check_git_path()
-    _format='___%nID:       %h%nDate:     %cd%nComment:  %s'
+    _if_graphic = ('g' in srv)
     _if_show_tag = ('t' in srv)
     _since = _until = _num = 0
     if len(param) == 3:
@@ -356,18 +394,31 @@ def GITInfo(srv, param):
         _range = "-%(num_of_log)s --skip=%(num_to_skip)s" %\
                 {'num_of_log': str(abs(_since - _until)),
                  'num_to_skip': str(min(_since, _until))}
-    _result = _envoke(["git log %(range)s --format='%(format)s'" %
+    if _if_graphic is True:
+        _format = '"%h" [label="<f0> %h|<f1> %an"]\n"%h":f0 -> {%p}'
+    else:
+        _format='___%nID:       %h%nDate:     %cd%nComment:  %s'
+    _result = _invoke(["git log %(range)s --format='%(format)s'" %
                     {'range': _range,
                      'format': _format}
                    ])
 
-    _result_list = _result.split('___\n')[1:]
+    #TODO: how to show the branch name in the graph???
+    if _if_graphic is True:
+        #further process the data and feed it to dotty
+        _result = re.sub('"[a-f0-9]{7}":f0 -> \{[ a-f0-9]+\}', _decorate_version, _result)
+        _result = 'digraph G{\nnode [shape=record]\n' + _result + '}'
+        with open('/tmp/gittool.dotty.tmp', 'w') as f:
+            f.write(_result)
+        _cmd = 'dotty /tmp/gittool.dotty.tmp'
+        _invoke([_cmd])
+        return "Done"
 
-    if _if_show_tag is True:
+    elif _if_show_tag is True:
         #will show the tag info
         _cmd = "git log %(range)s " % {'range': _range}
         _cmd += "--pretty=format:'%ad|%h|%d' --abbrev-commit --date=short"
-        _logs = _envoke([_cmd]).split('\n')
+        _logs = _invoke([_cmd]).split('\n')
 
         _branch = _get_current_branch()
         _result = ''
@@ -376,7 +427,7 @@ def GITInfo(srv, param):
             _tmp = _tmp.strip(' ()').split(', ')
             if _if_show_tag is True:
                 try:
-                    _container_tags = _envoke(["git tag --contains %(hash)s" %
+                    _container_tags = _invoke(["git tag --contains %(hash)s" %
                                                {'hash':_hash}
                                               ]).split('\n')
                     #get the tags on this specific version
@@ -439,7 +490,7 @@ def GITBackup(srv, param):
 
     msg = _get_answer(prompt = 'Any comment? [enter for empty comment]')
     msg = '"' + msg + '"'
-    result = _envoke(['git commit -a -m %s'%msg])
+    result = _invoke(['git commit -a -m %s'%msg])
     print(result)
 
     #to allow local backup in one's home directory
@@ -449,7 +500,7 @@ def GITBackup(srv, param):
         _file_list, _version_str = _get_version_range(with_previous_version = True)
         if _file_list is None or _version_str is None:
             _exit_with_error();
-        _tmp = _envoke([patch_cmd(_version_str)])
+        _tmp = _invoke([patch_cmd(_version_str)])
         _ans = _get_answer(prompt = 'where to store the patch file?')
         _target_dir=os.path.expanduser(_ans)
         if not os.path.isdir(_target_dir):
@@ -460,7 +511,7 @@ def GITBackup(srv, param):
                 _exit()
             else:
                 os.makedirs(_target_dir)
-        _envoke(['mv /tmp/backup.patch ' + _target_dir +
+        _invoke(['mv /tmp/backup.patch ' + _target_dir +
                  '/backup.%(verstr)s.patch ' % {'verstr': _version_str}])
         return "back up has been saved as " + _target_dir +\
               '/backup.%(verstr)s.patch ' % {'verstr': _version_str}
@@ -511,11 +562,11 @@ def GITDiff(srv, param):
     if _isversion:
         _versions = None
         for x in param[1:]:
-            if re.search('^.[0-9a-fA-F]*\.\..[0-9a-fA-F]*$', x) is not None:
+            if re.search('^[0-9a-fA-F]+\.\.[0-9a-fA-F]+$', x) is not None:
                 #this seems like a <ver>..<ver> string
                 _versions = x
                 break
-            if re.search('^.[0-9a-fA-F]*$', x) is not None:
+            if re.search('^[0-9a-fA-F]+$', x) is not None:
                 #this seems like a <ver> string
                 #check if the <ver> exist
                 if _if_ver_exist(x) is True:
@@ -562,7 +613,7 @@ def GITDiff(srv, param):
     if _difftool == 'vimdiff':
         os.system(_cmd)
     else:
-        _tmp = _envoke([_cmd])
+        _tmp = _invoke([_cmd])
     _exit()
 
 def GITConfig(srv, param):
@@ -600,14 +651,23 @@ def GITConfig(srv, param):
 #setup the environment for first use
 def GITSetup(param):
     if len(param) == 2 and param[1] == 'clean':
-        #remove all the symbolic links
+        print("removing all the link files...")
         _traverse_nested_list_with_action(SERVICES, _remove_link_file)
-        #TODO:restore the global config file
+        print("restore the .gitconfig file")
+        _invoke(['cp ~/.gitconfig ~/.gitconfig.gittool'])
+        _invoke(['mv ~/.gitconfig.gittool.backup ~/.gitconfig'])
         _exit()
-    ans=_get_answer(prompt = 'Would you like to setup GITTool? [y/N]',
+    _ans = _get_answer(prompt = 'Would you like to setup GITTool? [y/N]',
                     help = 'This will simply create a bunch of symbol links for you.\
                           \nSo would you like to setup GITTool? [y/N]')
     if 'y' == ans or 'Y' == ans:
+        print("back up the original .gitconfig file")
+        _ans = _get_answer(prompt = 'does your environment support colored text?[Y/n]')
+        if _ans == 'n' or _ans == 'N':
+            _set_global('GitTool', 'ColorSupport', 'no')
+        else:
+            _set_global('GitTool', 'ColorSupport', 'yes')
+        _invoke(['cp ~/.gitconfig ~/.gitconfig.gittool.backup'])
         #setup the difftools
         _available_tools_msg = "Valid merge tools are: araxis, bc3, diffuse, emerge, ecmerge, gvimdiff, kdiff3," +\
                                "kompare, meld, opendiff, p4merge, tkdiff, vimdiff and xxdiff."
@@ -622,6 +682,7 @@ def GITSetup(param):
                            help = "it will be used as the third tool when diff\
                                  \nleave it blank if you don't have a secondary diff tool")
         _set_diff_tool('third', _ans)
+        #set the graphic info tool settings
         #setup the symbolic links
         print("Please specify where you would like to put the GITTool facilities")
         print("[eg. '~/bin/GTool', '/tools']")
@@ -648,11 +709,11 @@ def GITSetup(param):
            if type(service) == list:
                #this is a nested list, right now we support 2-level nested list
                for sub_service in service:
-                   _envoke(["ln -s %(source)s %(link)s" %
+                   _invoke(["ln -s %(source)s %(link)s" %
                            {'source' : _source,
                             'link' : _target_dir + '/' + sub_service}])
            else:
-               _envoke(["ln -s %(source)s %(link)s" %
+               _invoke(["ln -s %(source)s %(link)s" %
                        {'source' : _source,
                         'link' : _target_dir+'/'+service}])
 
@@ -660,7 +721,7 @@ def GITSetup(param):
 
 #-----internal helpper functions-----
 #helper function to invoke bash commands
-def _envoke(cmd):
+def _invoke(cmd):
     #for debug only
     if DEBUG == True:
         print(color['yellow'] + ''.join(cmd) + _end_)
@@ -699,26 +760,26 @@ def _get_answer(prompt = '', help = 'No help available... '):
 def _set_branch_config(branch_from):
     #check if the config is already there
     _cur_branch = _get_current_branch()
-    _read_remote = _envoke(['git config --get branch.%(curbranch)s.remote' %
+    _read_remote = _invoke(['git config --get branch.%(curbranch)s.remote' %
                             {'curbranch': _cur_branch}
                            ])
-    _read_merge = _envoke(['git config --get branch.%(curbranch)s.merge' %
+    _read_merge = _invoke(['git config --get branch.%(curbranch)s.merge' %
                            {'curbranch': _cur_branch}
                           ])
     if _read_merge is None or _read_remote is None:
         #read the remote and merge values from the parent branch
-        _parent_remote = _envoke(['git config --get branch.%(curbranch)s.remote' %
+        _parent_remote = _invoke(['git config --get branch.%(curbranch)s.remote' %
                                   {'curbranch': branch_from}
                                  ])
-        _parent_merge = _envoke(['git config --get branch.%(curbranch)s.merge' %
+        _parent_merge = _invoke(['git config --get branch.%(curbranch)s.merge' %
                                  {'curbranch': branch_from}
                                 ])
         #set the remote and merge values of the current branch
-        _envoke(['git config branch.%(curbranch)s.remote %(remote)s' %
+        _invoke(['git config branch.%(curbranch)s.remote %(remote)s' %
                  {'curbranch': _cur_branch,
                      'remote': _parent_remote }
                 ])
-        _envoke(['git config branch.%(curbranch)s.merge %(merge)s' %
+        _invoke(['git config branch.%(curbranch)s.merge %(merge)s' %
                  {'curbranch': _cur_branch,
                      'merge': _parent_merge }
                 ])
@@ -736,7 +797,7 @@ def _get_version(since = '7', until = '0'):
                                  '    Enter directly for more versions, or\n' +
                                  '    ["more" ID] for further details of the version')
         if ans.startswith('more'):
-            _tmp = _envoke(['git log -1 %s' % ans.split()[-1]])
+            _tmp = _invoke(['git log -1 %s' % ans.split()[-1]])
             print _tmp
             raw_input('Any key to continue...')
             continue
@@ -776,7 +837,7 @@ def _switch_branch(isremote = False):
     _cmd = 'git branch'
     if isremote is True:
         _cmd += ' -r'
-    _tmp = _envoke([_cmd])
+    _tmp = _invoke([_cmd])
     if _tmp is None:
         _exit_with_error("seems like there is no branch available...")
 
@@ -813,19 +874,19 @@ def _switch_branch(isremote = False):
                 if '' == _local_branch:
                     return False
                 else:
-                    _tmp = _envoke(['git checkout %(remote_name)s -b %(local_name)s' %
+                    _tmp = _invoke(['git checkout %(remote_name)s -b %(local_name)s' %
                                     {'remote_name': _selected_branch,
                                      'local_name':_local_branch}
                                    ])
             else:
-                _tmp = _envoke(['git checkout %s' % _selected_branch])
+                _tmp = _invoke(['git checkout %s' % _selected_branch])
 
             return _tmp
     #we are here because the selected branch is not in the list
     #create a new branch with the name given
     _previous_branch = _get_current_branch()
-    _tmp = _envoke(['git branch %s' % _selected_branch])
-    _tmp = _envoke(['git checkout %s' % _selected_branch])
+    _tmp = _invoke(['git branch %s' % _selected_branch])
+    _tmp = _invoke(['git checkout %s' % _selected_branch])
     _set_branch_config(branch_from = _previous_branch)
     _result = 'branch ' +\
               color['red'] + _selected_branch + _end_ +\
@@ -835,6 +896,11 @@ def _switch_branch(isremote = False):
                color['red'] + _selected_branch + _end_
     return _result
 
+def _make_branch_link_to_local_repo(bname, path):
+    _cmd = "git checkout -b %(branch_name)s --track %(path)s" %\
+          {'branch_name': bname, 'path': path}
+    _invoke([_cmd])
+
 def _update_local_branch():
     #1. fetch the updates from remote repo
     #check if the corresponding config items are set
@@ -842,7 +908,7 @@ def _update_local_branch():
     _merge = _get_merge_value(_get_current_branch())
     print("fetching from %s ..." % _remote)
     _cmd = 'git fetch'
-    print(_envoke([_cmd]))
+    print(_invoke([_cmd]))
     #2. ask for option
     _ans = _get_answer(prompt = "fetch completes, shall we Merge or Rebase? (m/R)",
                        help = "Merge will keep the history of changes but mix the local " +\
@@ -855,17 +921,17 @@ def _update_local_branch():
         #3a. merge
         print("merging from %s ..." % _merge)
         _cmd = 'git merge ' + _remote_branch
-        return _envoke([_cmd])
+        return _invoke([_cmd])
     else:
         #3b. rebase, which is recommended in many cases
         print("rebasing from %s ..." % _merge)
         _cmd = 'git rebase'
-        return _envoke([_cmd])
+        return _invoke([_cmd])
     #TODO: there is yet another option, see the better (and more complicated) rebase at
     # http://softwareswirl.blogspot.com/2009/04/truce-in-merge-vs-rebase-war.html
 
 def _if_in_git_path():
-    _tmp = _envoke(['git rev-parse --git-dir'])
+    _tmp = _invoke(['git rev-parse --git-dir'])
     return False if 'fatal: Not a git repository' in _tmp\
                  else True
 #check if we are at a git repository
@@ -877,7 +943,7 @@ def _check_git_path():
 #get the source list length
 def _get_source_list_len():
     _command = 'git config --global sourcelist.length'
-    _len = int(_envoke([_command]))
+    _len = int(_invoke([_command]))
     if _len is None:
         raise ConfigItemMissing
     return _len
@@ -886,12 +952,12 @@ def _get_source_list_len():
 def _create_branch_link_to_local_repo(bname, rname):
     _cmd = 'git checkout -b %(branch)s --track %(localrepo)s' %\
            {'branch': bname, 'localrepo': rname}
-    return _envoke([_cmd])
+    return _invoke([_cmd])
 
 #set the source list length
 def _set_source_list_len(len):
     _command = 'git config --global sourcelist.length %d' % len
-    _envoke([_command])
+    _invoke([_command])
 
 #read the remembered source list
 def _get_source_list():
@@ -899,10 +965,10 @@ def _get_source_list():
     _list = list()
     for i in range(_len):
         _command = 'git config --global sourcelist.item%d' % (i + 1)
-        _tmp = _envoke([_command])
+        _tmp = _invoke([_command])
         if _tmp is None:
             raise ConfigItemMissing
-        _list.append(_envoke([_command])[:-1])
+        _list.append(_invoke([_command])[:-1])
     return _list
 
 #add a new source into the source list
@@ -910,31 +976,42 @@ def _add_to_source_list(item):
     _len = _get_source_list_len()
     _command = 'git config --global sourcelist.item%(index)d %(item)s' %\
               {'index': _len + 1, 'item':item}
-    _tmp = _envoke([_command])
+    _tmp = _invoke([_command])
     _set_source_list_len(_len + 1)
 
 #get a branch list
 def _get_branch_list():
-    _branches = _envoke(['git branch --no-color 2> /dev/null']).split('\n')
+    _branches = _invoke(['git branch --no-color 2> /dev/null']).split('\n')
     return [x.split()[-1] for x in _branches if x != '']
 
 #based on git branch, to get the current git branch
 def _get_current_branch():
-    #_branches = _envoke(['git branch --no-color 2> /dev/null']).split('\n')
+    #_branches = _invoke(['git branch --no-color 2> /dev/null']).split('\n')
     #_current_branch = [branch for branch in _branches if branch.startswith('*')][0]
     #_current_branch = _current_branch.split()[1]
-    _current_branch = _envoke(['git status']).split('\n')[0].split()[-1]
+    _current_branch = _invoke(['git status']).split('\n')[0].split()[-1]
     return _current_branch
 
 #get changed but not yet commited files
 def _get_changed_uncommited_file_list():
     _command = "git diff --name-only"
-    return _envoke([_command])
+    return _invoke([_command])
 
 #get the current version string
 def _get_current_version():
     _command = "git log -1 --format='%h'"
-    return _envoke([_command])[:-1]
+    return _invoke([_command])[:-1]
+
+#get the url of the corresponding remote repository
+def _get_remote_url():
+    _current_branch = _get_current_branch()
+    _remote = _get_remote_value(_current_branch)
+    if _remote is None:
+        raise ConfigItemMissing
+    _command = 'git config --get remote.%(name)s.url' %\
+              {'name': name}
+    _url = _invoke([_command])
+    return _url
 
 #based on git config, to get the local path in the repository where remote branch 
 #is stored.
@@ -963,6 +1040,16 @@ def _get_remote_branch():
         _path_to_remote = _l_refspec
     return _path_to_remote
 
+def _decorate_version(obj):
+    _tmp = ''
+    _line = obj.group()
+    _from = _line[1:8]
+    for x in re.findall('[a-f0-9]{7}', _line[7:]):
+        _tmp += '"%(from)s":f0 -> "%(ver)s":f0 [color=blue style=bold arrowhead=none arrowtail=vee]' %\
+                {'from':_from, 'ver':x}
+    #pdb.set_trace()
+    return _tmp
+
 #exit with error
 def _exit_with_error(msg = ''):
     print("Exit with error :")
@@ -987,17 +1074,21 @@ def _make_status_header(ver1, ver2):
 def _make_msg_bar(msg):
     _colorless_msg = msg
     #remove the color code
-    _colorless_msg = re.sub('\033.[^m]*m', '', _colorless_msg)
+    _colorless_msg = re.sub('\033[^m]*m', '', _colorless_msg)
     _msg_len = len(_colorless_msg)
     _pre = '_' * ((80 - _msg_len) / 2)
     _post = '_' * ((80 - _msg_len) / 2 + (80 - _msg_len) % 2)
     return _pre+msg+_post+'\n'
+#check if there is still any file that is not yet commited
+def _has_uncommited_files():
+    #to be implemented
+    return False
 
 #get the remote refspec and the local refspec
 def _get_remote_refspec(name):
     _command = 'git config --get remote.%(name)s.fetch' %\
             {'name': name}
-    _tmp = _envoke([_command])
+    _tmp = _invoke([_command])
     if _tmp is None:
         raise ValueError
     _tmp = _tmp[:-1]
@@ -1010,7 +1101,7 @@ def _get_remote_refspec(name):
 def _get_merge_value(curbranch):
     _command = 'git config --get branch.%(cur_branch)s.merge' %\
                            {'cur_branch':curbranch}
-    _tmp = _envoke([_command])
+    _tmp = _invoke([_command])
     if _tmp is None:
         raise ConfigItemMissing
     return _tmp[:-1]
@@ -1019,24 +1110,24 @@ def _get_merge_value(curbranch):
 def _get_remote_value(curbranch):
     _command = 'git config --get branch.%(cur_branch)s.remote' %\
                         {'cur_branch':curbranch}
-    _tmp = _envoke([_command])
+    _tmp = _invoke([_command])
     if _tmp is None:
         raise ConfigItemMissing
     return _tmp[:-1]
 #command to get the diff tool value
 def _get_diff_tool(selection):
     _command = 'git config --global difftool.%s' % selection
-    _tmp = _envoke([_command])
+    _tmp = _invoke([_command])
     return _tmp[:-1] if _tmp is not None else None
 #command to set the diff tool value
 def _set_diff_tool(selection, tool):
     _command = 'git config --global difftool.%(selection)s %(tool)s' %\
             {'selection':selection, 'tool':tool}
-    _tmp = _envoke([_command])
+    _tmp = _invoke([_command])
 #check if a version exists
 def _if_ver_exist(ver):
     _command = 'git rev-parse ' + ver
-    _tmp = _envoke([_command])
+    _tmp = _invoke([_command])
     if re.match('unknown revision', _tmp) is not None:
         return False
     else:
@@ -1045,7 +1136,7 @@ def _if_ver_exist(ver):
 def _remove_link_file(x):
     _fullpath = sys.argv[0]
     _dir = _fullpath[:_fullpath.rfind('/') + 1]
-    _envoke(['rm %s' % (_dir + x)])
+    _invoke(['rm %s' % (_dir + x)])
 
 #do something by traversing the given nested list
 def _traverse_nested_list_with_action(lst, action):
@@ -1088,7 +1179,8 @@ CALL_TABLE = { 'gst': GITStatus,
                'gbu': GITBackup,
                'gdi': GITDiff,
                'gcf': GITConfig,
-               'ggt': GITGet
+               'ggt': GITGet,
+               'gpt': GITPut
              }
 
 if __name__ == '__main__':
@@ -1097,7 +1189,7 @@ if __name__ == '__main__':
     this tool works like busybox: all the symbolic links to the same file.
     depending on what command name is invoked, we provide corresponding services.
     """
-    _envoke(['export','LANG=en_US.UTF-8'])
+    _invoke(['export','LANG=en_US.UTF-8'])
 
     #get the service requested by the user
     parser = OptionParser()
