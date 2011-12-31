@@ -17,7 +17,6 @@ Proposed services:
    gpp: Git Prepare, set up a new sandbox with all your changes inside
         *This is for preparing a clean sandbox to submit for integration
    gfl: Git File, to fetch a file from a version
-   gvw: should be a wonderful feature that borrow from clearcase, details to be considered
    gpa: Git PAtch
 """
 import os
@@ -106,49 +105,6 @@ class GITError(Exception):
 class ConfigItemMissing(GITError):
     """The item/section in the git config file does not exist"""
 
-def GITView(srv, param):
-    """ gvw
-        provide a way to select files from different commits.
-        similar with the view concept from ClearCase.
-        'gvw <file-name> <commit-hash>' will check out the file from the given
-        commit. After that with a gsw the checked out file will be shown with
-        extra info about which commit is the file checked out from.
-        without the <commit-hash> given, the file will be recovered to the status
-        before gvw: either the last commit, or an uncommitted version.
-    """
-    _has_hash, _hash = _find_hash_in_param(param)
-
-    #if no <commit-hash> is given, check if the path.to.file.uncommitted exists
-    #bring the file to the last commit, or copy the uncommitted file directly
-    if _has_hash is False:
-        _filelist = _get_file_list_from_input(param)
-        for f in _filelist:
-            if _saved_file_exist(f):
-                #restore from the saved file
-                pass
-            else:
-                #simply checkout the latest version of the file
-                pass
-        return "Done"
-
-    _filelist = _get_file_list_from_input(param[:-1]) #get rid of the hash
-    #if the file has been changed but is uncommitted, copy the file to .git
-    #as path.to.file.uncommitted. and checkout the file.
-    for f in _filelist:
-        pass
-
-    #use git checkout to get the file from the specified commit
-    #-we need a list of checked out files later to put into the config file
-    #-hopefully this info can be got from the output of the checkout command
-
-    #store the 'from' info into the local config file
-    #the info should be something like, (file path), (commit from)
-
-    #store a copy of the original checked out file under .git directory
-    #-change the path/to/file to path.to.file and save
-    #-if there is already the file, overwrite it.
-    pass
-
 def GITGet(srv, param):
     """ ggt
         get a latest copy of the specified repository/branch
@@ -159,7 +115,7 @@ def GITGet(srv, param):
         the source from a list
     """
     #1. check if only update the local is requested
-    if _if_in_git_path() is True:
+    if _root_path() is not None:
         if _has_uncommited_files() is True:
             print("There are still files unstaged/uncommited." +
                   "Please use gbu to commit all your changes before" +
@@ -206,7 +162,7 @@ def GITGet(srv, param):
         _cmd = clone_cmd(_source)
     else:
         #i believe this is a fetch request
-        if _if_in_git_path() is False:
+        if _root_path() is None:
             return "Seem like you are trying to fetch a branch, but in no git reporitory" +\
                   "You might consider issue the command in a repository..."
         _ifclone = False
@@ -277,7 +233,6 @@ def GITStatus(srv, param):
     _isdir = ('d' in srv)
     _version_str = param[1] if _isversion else None
     _branch_name = param[1] if _isbranch else None
-
     if _isversion is True:
         #show diff between two given versions
         _cmd = status_version_cmd(_version_str)
@@ -298,14 +253,11 @@ def GITStatus(srv, param):
     else:
         #we are asked to do a normal 'git status'
         _cmd = status_cmd(param)
-
     if _isdir is True:
         #only show the touched files in the current directory
         _cmd += ' -- ' + os.getcwd()
-
     #eventually invoke the command
     _tmp_result = _invoke([_cmd])
-
     #prettify the outcome
     _final_str = ''
     if _isversion or _isbranch or _isremote:
@@ -321,24 +273,17 @@ def GITStatus(srv, param):
         else:
             #the tool is not able to get the compared versions
             _comp2 = _comp1 = 'UNKNOWN'
-
         if _tmp_result is None or _tmp_result.strip(' ') is None:
             _tmp_result = ''
             _changes = 0
         else:
             _changes = len(_tmp_result.split('\n')) - 1
-
         _total = 'Different files: ' + color['red'] + str(_changes) + _end_
         _final_str += _make_msg_bar(_make_status_header(_comp1, _comp2))
         _final_str += _tmp_result
         _final_str += _make_msg_bar(_total)
     else:
         _final_str = _tmp_result
-
-    #check the local config file, if we have files checked out by gvw
-    #traverse the final str and add the 'from commit' and "modified" info tag
-    #??what is the most efficient way to tell if two files are the same??
-
     return _final_str
 
 def GITSwitch(srv, param):
@@ -358,7 +303,6 @@ def GITSwitch(srv, param):
     _hastag = False
     _isremote = ('r' in srv)
     _bname = _tname = ''
-
     if _hasbranch is _hastag is False:
         #no hint about what the user is trying to do
         #give a list of local/remote branch to select
@@ -413,7 +357,6 @@ def GITInfo(srv, param):
     else:
         #default, show the latest version info
         _num = 1
-
     if _if_graphic is True:
         """
         TODO: i haven't figured out how to do this right, yet
@@ -439,7 +382,6 @@ def GITInfo(srv, param):
                     {'range': _range,
                      'format': _format}
                    ])
-
     #TODO: how to show the branch name in the graph???
     if _if_graphic is True:
         #further process the data and feed it to dotty
@@ -450,13 +392,11 @@ def GITInfo(srv, param):
         _cmd = 'dotty /tmp/gittool.dotty.tmp'
         _invoke([_cmd])
         return "Done"
-
     elif _if_show_tag is True:
         #will show the tag info
         _cmd = "git log %(range)s " % {'range': _range}
         _cmd += "--pretty=format:'%ad|%h|%d' --abbrev-commit --date=short"
         _logs = _invoke([_cmd]).split('\n')
-
         _branch = _get_current_branch()
         _result = ''
         for _line in _logs:
@@ -524,12 +464,10 @@ def GITBackup(srv, param):
         if ans == 'n' or ans == 'N':
             if _switch_branch() == False:
                 _exit()
-
     msg = _get_answer(prompt = 'Any comment? [enter for empty comment]')
     msg = '"' + msg + '"'
     result = _invoke(['git commit -a -m %s'%msg])
     print(result)
-
     #to allow local backup in one's home directory
     _ans = _get_answer(prompt = 'Backup the changes to a patch also? [y/N]',
                        help = "say y or Y if you like to make a patch file for the change")
@@ -594,7 +532,6 @@ def GITDiff(srv, param):
     if _difftool is None:
         #try to get the default diff tool in this case
         _difftool = _get_diff_tool('first')
-
     #look for the version string
     if _isversion:
         _versions = None
@@ -763,14 +700,12 @@ def _invoke(cmd):
     if DEBUG == True:
         print(color['yellow'] + ''.join(cmd) + _end_)
         return
-
     execution=subprocess.Popen(cmd,
                                shell=True,
                                stdin=subprocess.PIPE,
                                stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE)
     o=execution.communicate()
-
     if o[1]:
         return o[1]
     #only return the std result, when there is no error
@@ -783,11 +718,9 @@ def _get_answer(prompt = '', help = 'No help available... '):
         ps = color['lightblue'] + PROMPT_SIGN + _end_
     else:
         ps = PROMPT_SIGN
-
     ans = raw_input(prompt + ps)
     while ans == '/h':
         ans = raw_input(help + ps)
-
     if '/e' == ans:
         sys.exit()
     else:
@@ -798,49 +731,22 @@ def _set_branch_config(branch_from):
     #check if the config is already there
     _cur_branch = _get_current_branch()
     _read_remote = _invoke(['git config --get branch.%(curbranch)s.remote' %
-                            {'curbranch': _cur_branch}
-                           ])
+                            {'curbranch': _cur_branch}])
     _read_merge = _invoke(['git config --get branch.%(curbranch)s.merge' %
-                           {'curbranch': _cur_branch}
-                          ])
+                           {'curbranch': _cur_branch}])
     if _read_merge is None or _read_remote is None:
         #read the remote and merge values from the parent branch
         _parent_remote = _invoke(['git config --get branch.%(curbranch)s.remote' %
-                                  {'curbranch': branch_from}
-                                 ])
+                                  {'curbranch': branch_from}])
         _parent_merge = _invoke(['git config --get branch.%(curbranch)s.merge' %
-                                 {'curbranch': branch_from}
-                                ])
+                                 {'curbranch': branch_from}])
         #set the remote and merge values of the current branch
         _invoke(['git config branch.%(curbranch)s.remote %(remote)s' %
                  {'curbranch': _cur_branch,
-                     'remote': _parent_remote }
-                ])
+                     'remote': _parent_remote }])
         _invoke(['git config branch.%(curbranch)s.merge %(merge)s' %
                  {'curbranch': _cur_branch,
-                     'merge': _parent_merge }
-                ])
-
-#get a list of the files, this is needed when '*' or a directory name is given
-def _get_file_list_from_input(param):
-    _list = list()
-    for x in param.split():
-        if x == '*':
-            pass
-        elif os.path.isdir(x):
-            pass
-        else:
-            pass
-    return _list
-
-#try to find a hash from the given parameters, with the rest (or all) of them being files
-def _find_hash_in_param(param):
-    for x in param:
-        if (re.match('^[0-9a-f]{7}', x) or
-            re.match('^[0-9a-f]{40}', x)) and\
-           not os.path.isfile(x) and not os.path.isdir(x):
-            return True, x
-    return False, None
+                     'merge': _parent_merge }])
 
 #prompt the user a list of versions and ask for a selected version
 def _get_version(since = '7', until = '0'):
@@ -865,6 +771,7 @@ def _get_version(since = '7', until = '0'):
             continue
         else:
             return ans
+
 #get file differences between two versions
 def _get_version_range(with_previous_version = False):
     if with_previous_version is True:
@@ -875,9 +782,11 @@ def _get_version_range(with_previous_version = False):
         _current_version = _result.split('\n')[5].split(' ')[-1]
     else:
         #get the version before the very first change is made
-        print("[+] Select the" + color['red'] + " initial " + _end_ + "version that your changes are based on")
+        print("[+] Select the" + color['red'] + " initial " + _end_ +
+                "version that your changes are based on")
         _base_version = _get_version(since = 4)
-        print("[+] Select the" + color['red'] + " new " + _end_ + "version that your changes are based on")
+        print("[+] Select the" + color['red'] + " new " + _end_ +
+                "version that your changes are based on")
         _current_version = _get_version(since = 4)
     _version_str = _current_version + '..' + _base_version
     #list all changed files
@@ -898,7 +807,6 @@ def _switch_branch(isremote = False):
     _tmp = _invoke([_cmd])
     if _tmp is None:
         _exit_with_error("seems like there is no branch available...")
-
     #display a list of branches available
     _list = _tmp.split('\n')
     for line in _list:
@@ -912,7 +820,6 @@ def _switch_branch(isremote = False):
                 print(' '*4 +
                       '>> ' +
                       line.split()[-1]) #get the branch name
-
     _selected_branch=_get_answer(help = 'You can: \
                                        \n   Enter an existing branch above or,\
                                        \n   Type the name for an existing branch not in the list or,\
@@ -938,7 +845,6 @@ def _switch_branch(isremote = False):
                                    ])
             else:
                 _tmp = _invoke(['git checkout %s' % _selected_branch])
-
             return _tmp
     #we are here because the selected branch is not in the list
     #create a new branch with the name given
@@ -988,13 +894,18 @@ def _update_local_branch():
     #TODO: there is yet another option, see the better (and more complicated) rebase at
     # http://softwareswirl.blogspot.com/2009/04/truce-in-merge-vs-rebase-war.html
 
-def _if_in_git_path():
-    _tmp = _invoke(['git rev-parse --git-dir'])
-    return False if 'fatal: Not a git repository' in _tmp\
-                 else True
+#get the root path of the current repository
+def _root_path():
+    _cmd = 'git rev-parse --show-toplevel'
+    _tmp = _invoke([_cmd])
+    if 'Not a git repository' not in _cmd:
+        return _tmp
+    else:
+        return None
+
 #check if we are at a git repository
 def _check_git_path():
-    if _if_in_git_path() is False:
+    if _root_path() is None:
         print("It seems you are not in a git repository...")
         _exit()
 
@@ -1137,10 +1048,12 @@ def _make_msg_bar(msg):
     _pre = '_' * ((80 - _msg_len) / 2)
     _post = '_' * ((80 - _msg_len) / 2 + (80 - _msg_len) % 2)
     return _pre+msg+_post+'\n'
+
 #check if there is still any file that is not yet commited
 def _has_uncommited_files():
     #to be implemented
     return False
+
 #from a version tree perspective, return a commit that is
 #the nth commit from HEAD down along a branch
 #like:            d1--f
@@ -1184,15 +1097,6 @@ def _saved_file_exist(file):
     if _make_dir(_root+'/.git/savedfiles'):
         pass
 
-#get the root path of the current repository
-def _root_path():
-    _cmd = 'git rev-parse --show-toplevel'
-    _tmp = _invoke([_cmd])
-    if 'Not a git repository' not in _cmd:
-        return _tmp
-    else:
-        return None
-
 #command to get the remote branch from config file, based on the given current branch name
 def _get_remote_value(curbranch):
     _command = 'git config --get branch.%(cur_branch)s.remote' %\
@@ -1201,16 +1105,19 @@ def _get_remote_value(curbranch):
     if _tmp is None:
         raise ConfigItemMissing
     return _tmp[:-1]
+
 #command to get the diff tool value
 def _get_diff_tool(selection):
     _command = 'git config --global difftool.%s' % selection
     _tmp = _invoke([_command])
     return _tmp[:-1] if _tmp is not None else None
+
 #command to set the diff tool value
 def _set_diff_tool(selection, tool):
     _command = 'git config --global difftool.%(selection)s %(tool)s' %\
             {'selection':selection, 'tool':tool}
     _tmp = _invoke([_command])
+
 #check if a version exists
 def _if_ver_exist(ver):
     _command = 'git rev-parse ' + ver
@@ -1259,7 +1166,6 @@ def fetch_origin_cmd(src, dst):
     return'git fetch origin %(source)s:%(local)s' %\
             {'source':src, 'local':dst}
 
-
 CALL_TABLE = { 'gst': GITStatus,
                'gsw': GITSwitch,
                'gif': GITInfo,
@@ -1267,8 +1173,7 @@ CALL_TABLE = { 'gst': GITStatus,
                'gdi': GITDiff,
                'gcf': GITConfig,
                'ggt': GITGet,
-               'gpt': GITPut
-             }
+               'gpt': GITPut }
 
 if __name__ == '__main__':
     """
@@ -1277,11 +1182,9 @@ if __name__ == '__main__':
     depending on what command name is invoked, we provide corresponding services.
     """
     _invoke(['export','LANG=en_US.UTF-8'])
-
     #get the service requested by the user
     parser = OptionParser()
     service = parser.get_prog_name()
-
     #a major service will always be a 3-character key word
     if service == 'ghelp':
         try:
@@ -1300,36 +1203,3 @@ if __name__ == '__main__':
         #enable the error hiding for released version
         #except Exception:
         #    print("unhandled error, please check your inputs")
-
-    """
-    elif real_cmd == 'grs':
-        #check if we are in a valid git repository
-        _check_git_path()
-        GITRestore()
-    elif real_cmd == 'gpl':
-        #check if we are in a valid git repository
-        _check_git_path()
-        GITPull(branch = sys.argv[1] if (len(sys.argv) == 2) else None)
-    elif real_cmd.startswith('gsh'):
-        #check if we are in a valid git repository
-        _check_git_path()
-        if len(sys.argv) == 3:
-            GITShare( cmd = real_cmd, his_email = sys.argv[1], his_branch = sys.argv[2] )
-        else:
-            GITShare( cmd = real_cmd )
-    elif real_cmd == 'gpp':
-        #check if we are in a valid git repository
-        _check_git_path()
-        GITPrepare()
-    elif real_cmd == 'gfl':
-        _check_git_path()
-        GITFile(real_cmd, sys.argv[1:])
-    elif real_cmd == 'ghelp':
-        hm = HelpMaker(sys.argv[0])
-        if len(sys.argv) == 2:
-            hm.show_help(sys.argv[1])
-        else:
-            hm.show_help()
-    else:
-        GITSetup()
-    """
