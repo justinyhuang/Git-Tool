@@ -18,6 +18,7 @@ Proposed services:
         *This is for preparing a clean sandbox to submit for integration
    gfl: Git File, to fetch a file from a version
    gvw: should be a wonderful feature that borrow from clearcase, details to be considered
+   gpa: Git PAtch
 """
 import os
 import re
@@ -29,7 +30,6 @@ import pdb
 from optparse import OptionParser
 
 """
-TODO: realize ascii graph showing version trees in terminal
 TODO: think about a mechanism to handle unintensional interruption during, say, committing
 TODO: ask user in GITSetup if colors are supported in his environment, better print some colored texts
 TODO: implement the \d command of Prompt Mode
@@ -106,23 +106,48 @@ class GITError(Exception):
 class ConfigItemMissing(GITError):
     """The item/section in the git config file does not exist"""
 
-class Ball(object):
+def GITView(srv, param):
+    """ gvw
+        provide a way to select files from different commits.
+        similar with the view concept from ClearCase.
+        'gvw <file-name> <commit-hash>' will check out the file from the given
+        commit. After that with a gsw the checked out file will be shown with
+        extra info about which commit is the file checked out from.
+        without the <commit-hash> given, the file will be recovered to the status
+        before gvw: either the last commit, or an uncommitted version.
     """
-    A ball is a carrier that holds the output of the previous function, and
-    goes to the next function call providing necessary inputs.
-    """
-    def __init__(self, **param):
-        """
-        init the ball
-        """
-        #holds the processed file list, if there is any
-        self._file_list = None
-        #holds the version string, if there is any
-        self._version_str = None
-        #for any future extended functionalities
-        self._param = param
-    def get_file_list(list):
-        self._file_list = list
+    _has_hash, _hash = _find_hash_in_param(param)
+
+    #if no <commit-hash> is given, check if the path.to.file.uncommitted exists
+    #bring the file to the last commit, or copy the uncommitted file directly
+    if _has_hash is False:
+        _filelist = _get_file_list_from_input(param)
+        for f in _filelist:
+            if _saved_file_exist(f):
+                #restore from the saved file
+                pass
+            else:
+                #simply checkout the latest version of the file
+                pass
+        return "Done"
+
+    _filelist = _get_file_list_from_input(param[:-1]) #get rid of the hash
+    #if the file has been changed but is uncommitted, copy the file to .git
+    #as path.to.file.uncommitted. and checkout the file.
+    for f in _filelist:
+        pass
+
+    #use git checkout to get the file from the specified commit
+    #-we need a list of checked out files later to put into the config file
+    #-hopefully this info can be got from the output of the checkout command
+
+    #store the 'from' info into the local config file
+    #the info should be something like, (file path), (commit from)
+
+    #store a copy of the original checked out file under .git directory
+    #-change the path/to/file to path.to.file and save
+    #-if there is already the file, overwrite it.
+    pass
 
 def GITGet(srv, param):
     """ ggt
@@ -223,7 +248,7 @@ def GITStatus(srv, param):
     """
     gst
     show the status (what have been changed) between repositories, branches or versions.
-    gst(rvd): without (rvd), is equal to 'git status', showing the changed files
+    gst(rvd): without (rvd), is equal to 'git status -s', showing the changed files
               between working copy and the HEAD of current local branch.
 
               with (r), show the changed files between the current branch (in
@@ -252,9 +277,6 @@ def GITStatus(srv, param):
     _isdir = ('d' in srv)
     _version_str = param[1] if _isversion else None
     _branch_name = param[1] if _isbranch else None
-
-    #initialize the ball
-    _ball = Ball()
 
     if _isversion is True:
         #show diff between two given versions
@@ -312,6 +334,10 @@ def GITStatus(srv, param):
         _final_str += _make_msg_bar(_total)
     else:
         _final_str = _tmp_result
+
+    #check the local config file, if we have files checked out by gvw
+    #traverse the final str and add the 'from commit' and "modified" info tag
+    #??what is the most efficient way to tell if two files are the same??
 
     return _final_str
 
@@ -371,7 +397,7 @@ def GITInfo(srv, param):
                     * the tool is smart enough even you put the since and until version in the other order =)
                 with (t) you will get the tag info if there is any.
                     Note that fetching tag info would take a bit more time
-                with (g) you will get an ascii based version tree expression #NOT YET REALIZED (i wonder if we need to have a real graphic presentation)
+                with (g) you will get graphic version tree expression based on a dot file
     """
     _check_git_path()
     _if_graphic = ('g' in srv)
@@ -388,15 +414,26 @@ def GITInfo(srv, param):
         #default, show the latest version info
         _num = 1
 
-    if _num != 0:
-        _range = '-%(num)s' % {'num': str(_num)}
-    else:
-        _range = "-%(num_of_log)s --skip=%(num_to_skip)s" %\
-                {'num_of_log': str(abs(_since - _until)),
-                 'num_to_skip': str(min(_since, _until))}
     if _if_graphic is True:
+        """
+        TODO: i haven't figured out how to do this right, yet
+        if _num != 0:
+            _graph_since = _get_version_tree_nth_commit(0)
+            _graph_until = _get_version_tree_nth_commit(_num)
+        else:
+            _graph_since = _get_version_tree_nth_commit(_since)
+            _graph_until = _get_version_tree_nth_commit(_until)
+        _range =  _graph_until + '..' + _graph_since
+        """
+        _range =  'HEAD'+100*'^'+'..HEAD'
         _format = '"%h" [label="<f0> %h|<f1> %an"]\n"%h":f0 -> {%p}'
     else:
+        if _num != 0:
+            _range = '-%(num)s' % {'num': str(_num)}
+        else:
+            _range = "-%(num_of_log)s --skip=%(num_to_skip)s" %\
+                    {'num_of_log': str(abs(_since - _until)),
+                     'num_to_skip': str(min(_since, _until))}
         _format='___%nID:       %h%nDate:     %cd%nComment:  %s'
     _result = _invoke(["git log %(range)s --format='%(format)s'" %
                     {'range': _range,
@@ -406,7 +443,7 @@ def GITInfo(srv, param):
     #TODO: how to show the branch name in the graph???
     if _if_graphic is True:
         #further process the data and feed it to dotty
-        _result = re.sub('"[a-f0-9]{7}":f0 -> \{[ a-f0-9]+\}', _decorate_version, _result)
+        _result = re.sub('"[a-f0-9]{7}":f0 -> \{[ a-f0-9]+\}', _build_merge_arrows, _result)
         _result = 'digraph G{\nnode [shape=record]\n' + _result + '}'
         with open('/tmp/gittool.dotty.tmp', 'w') as f:
             f.write(_result)
@@ -784,6 +821,27 @@ def _set_branch_config(branch_from):
                      'merge': _parent_merge }
                 ])
 
+#get a list of the files, this is needed when '*' or a directory name is given
+def _get_file_list_from_input(param):
+    _list = list()
+    for x in param.split():
+        if x == '*':
+            pass
+        elif os.path.isdir(x):
+            pass
+        else:
+            pass
+    return _list
+
+#try to find a hash from the given parameters, with the rest (or all) of them being files
+def _find_hash_in_param(param):
+    for x in param:
+        if (re.match('^[0-9a-f]{7}', x) or
+            re.match('^[0-9a-f]{40}', x)) and\
+           not os.path.isfile(x) and not os.path.isdir(x):
+            return True, x
+    return False, None
+
 #prompt the user a list of versions and ask for a selected version
 def _get_version(since = '7', until = '0'):
     _since = since
@@ -1040,14 +1098,14 @@ def _get_remote_branch():
         _path_to_remote = _l_refspec
     return _path_to_remote
 
-def _decorate_version(obj):
+def _build_merge_arrows(obj):
     _tmp = ''
     _line = obj.group()
     _from = _line[1:8]
-    for x in re.findall('[a-f0-9]{7}', _line[7:]):
-        _tmp += '"%(from)s":f0 -> "%(ver)s":f0 [color=blue style=bold arrowhead=none arrowtail=vee]' %\
+    _list = re.findall('[a-f0-9]{7}', _line[7:])
+    for x in _list:
+        _tmp += '"%(from)s":f0 -> "%(ver)s":f0 [color=blue style=bold arrowhead=none arrowtail=vee]\n' %\
                 {'from':_from, 'ver':x}
-    #pdb.set_trace()
     return _tmp
 
 #exit with error
@@ -1083,6 +1141,19 @@ def _make_msg_bar(msg):
 def _has_uncommited_files():
     #to be implemented
     return False
+#from a version tree perspective, return a commit that is
+#the nth commit from HEAD down along a branch
+#like:            d1--f
+#               /
+#        a--b--c--d2--e
+#               \
+#                 d3--g--h
+# the 5th commit could be either f, e, or g
+def _get_version_tree_nth_commit(num):
+    _cmd = 'git log HEAD' + (num + 1) * '^' +\
+           '..HEAD' + num * '^' +\
+           ' --ancestry-path --oneline'
+    return _invoke([_cmd]).split()[0]
 
 #get the remote refspec and the local refspec
 def _get_remote_refspec(name):
@@ -1105,6 +1176,22 @@ def _get_merge_value(curbranch):
     if _tmp is None:
         raise ConfigItemMissing
     return _tmp[:-1]
+
+def _saved_file_exist(file):
+    _root = _root_path()
+    if _root is None:
+        _exit_with_error("You are not in a git repository")
+    if _make_dir(_root+'/.git/savedfiles'):
+        pass
+
+#get the root path of the current repository
+def _root_path():
+    _cmd = 'git rev-parse --show-toplevel'
+    _tmp = _invoke([_cmd])
+    if 'Not a git repository' not in _cmd:
+        return _tmp
+    else:
+        return None
 
 #command to get the remote branch from config file, based on the given current branch name
 def _get_remote_value(curbranch):
@@ -1158,7 +1245,7 @@ def status_branch_cmd(remotebranch):
 
 #command to do git status
 def status_cmd(param):
-    return 'git status ' % param
+    return 'git status -s' % param
 
 # command to generate a patch with given version string
 def patch_cmd(param):
