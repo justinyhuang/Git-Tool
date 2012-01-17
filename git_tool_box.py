@@ -907,7 +907,7 @@ def _get_remote_url():
     _remote = _get_local('branch.%s.remote' % _get_current_branch())
     if _remote is None:
         raise ConfigItemMissing
-    _url = _get_local('remote.%s.url' % name)
+    _url = _get_local('remote.%s.url' % _remote)
     return _url
 
 #based on git config, get the local path in the repository where remote branch is stored.
