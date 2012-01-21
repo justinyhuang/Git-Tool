@@ -1,4 +1,4 @@
-#!/projects/phx/tools/python/bin/python -W ignore::DeprecationWarning
+#!/usr/bin/python -W ignore::DeprecationWarning
 """
 GitBox - a utility set for easier use of git
 
@@ -78,6 +78,7 @@ SERVICES = [
 
 color = dict()
 if COLOR:
+    color['none'] = ''
     color['red'] = '\033[01;31m'
     color['green'] = '\033[01;32m'
     color['yellow'] = '\033[01;33m'
@@ -106,8 +107,10 @@ class Ball(object):
     def __init__(self, list, **param):
         self._list = list     #all the data will be stored in a list
         self._param = param   #for any future extended functionalities
-    def get_ball(self):
+    def get_list(self):
         return self._list
+    def get_indexed_list(self, highlight):
+        return _index_list(self._list, highlight = highlight)
     def __getitem__(self, k):
         return self._list[k]
     def delete(self, item_list):
@@ -125,7 +128,10 @@ class BranchBall(Ball):
         super(BranchBall, self).__init__(list)
     def delete(self, item_list):
         for x in item_list:
-            _delete_branch(self._list[x])
+            _result, _msg = _delete_branch(self._list[x])
+            if _result is False: # the item is not deleted
+                item_list.remove(x)
+            print(_msg)
         super(BranchBall, self).delete(item_list)
 
 class FileBall(Ball):
@@ -299,17 +305,9 @@ def GITStatus(srv, param):
         _changed, _untracked= _get_changed_files(_tmp_result)
         _changes = len(_changed)
         _comp2, _comp1 = _get_current_branch(), 'working copy'
-    _changed = _index_list(_changed, begin = 0, index_color = 'lightblue')
-    _untracked = _index_list(_untracked, begin = len(_changed), index_color = 'yellow')
-    if not _changed and not _untracked : #nothing found
-        _tmp_result = 'None'
-    else: #combine the changed and the out-of-version-control file lists
-        _tmp_result = '\n'.join(_changed) + '\n' + '\n'.join(_untracked) + '\n'
     _total = 'Changed files: ' + color['red'] + str(_changes) + _end_
-    _final_str += _make_msg_bar(_make_status_header(_comp1, _comp2))\
-                + _tmp_result + _make_msg_bar(_total)
     _files = FileBall(_changed + _untracked)
-    _ans = _get_answer(prompt = _final_str,
+    _ans = _get_answer(prompt = '', postfix = _make_msg_bar(_make_status_header(_comp1, _comp2)),
                        help = 'use /d to revert a changed file, or Enter to quit',
                        ball = _files)
     return ''
@@ -338,10 +336,15 @@ def GITBranch(srv, param):
     if _hasbranch is _hastag is False: #user doesn't give any arguments
         return _switch_branch(_isremote) #select a branch a list of local/remote branches
     else: #user gives either a branch name, or a tag
+        #TODO: need to implement support for creating a branch
         _name = param[1]
         _cmd = 'git checkout '
         if _hasbranch is True: #checkout a branch with the given branch name
-            _cmd += _name
+            _tmp, _branch_list = _get_branch_list()
+            if _name in _branch_list: #switch to an existing branch
+                _cmd += _name
+            else: #branch doesn't exist, make it
+                return _make_branch(_name)
         if _hastag is True: #checkout a branch with the given tag
             _branchname = _get_answer(prompt = 'branch name to keep the remote branch data: ',
                                       help = 'To get a remote branch, \n\
@@ -352,7 +355,7 @@ def GITBranch(srv, param):
             else: #check out a new branch to hold the remote data with the given tag
                 _cmd += '%(tag)s -b %(newbranch)s' %\
                         {'tag': _tname, 'newbranch': _branchname}
-        _tmp = _invoke([_cmd])
+        return _invoke([_cmd])
 
 def GITInfo(srv, param):
     """gif
@@ -451,8 +454,10 @@ def GITBackup(srv, param):
         if _ans == 'n' or _ans == 'N':
             if _switch_branch() == '':
                 _exit()
-    _msg = _get_answer(prompt = 'Any comment? [enter for empty comment]')
-    _msg = '" ' + _msg + ' "'
+    _msg = ''
+    while _msg is '':
+        _msg = _get_answer(prompt = 'Any comment? [empty comment is not allowed]')
+    _msg = '"' + _msg + '"'
     _result = _invoke(['git commit -a -m %s' % _msg])
     #to allow local backup in one's home directory
     _ans = _get_answer(prompt = 'Backup the changes to a patch also? [y/N]',
@@ -677,16 +682,23 @@ def _invoke(cmd, detached = False):
         return ""
 
 #helper function to prompt users information and receive answers
-def _get_answer(prompt = '', help = 'No help available... ', ball = None):
-    if 'No help available... ' != help:
+def _get_answer(prefix = '', prompt = '', postfix = '',
+                help = 'No help available... ', ball = None, hl = -1):
+    if 'No help available... ' != help: # show prompt in a different color if help is available
         _ps = color['lightblue'] + PROMPT_SIGN + _end_
     else:
         _ps = PROMPT_SIGN
-    _ans = raw_input(prompt + _ps)
+    if ball: # when a ball is given, show the item list in the ball.
+        _prompt = prefix + '\n' +\
+                  '\n'.join(ball.get_indexed_list(highlight = hl)) + '\n' +\
+                  postfix + '\n' + prompt
+    else:
+        _prompt = prompt
+    _ans = raw_input(_prompt + _ps)
     while _ans == '/h':
         _ans = raw_input(help + _ps)
     if '/e' == _ans:
-        sys.exit()
+        _exit()
     elif _ans.startswith('/d '):
         if ball is None:
             _exit_with_error("no ball is passed while a delete is required")
@@ -696,6 +708,9 @@ def _get_answer(prompt = '', help = 'No help available... ', ball = None):
             ball.delete([int(x.group()) for x in re.finditer('\d+', _tmp)]) #get all indexes
         else:
             _exit_with_error("to delete an item, try '/d <index>'")
+        #show the prompt and item list after deletion
+        return _get_answer(prefix = prefix, prompt = prompt, postfix = postfix,
+                           help = help, ball = ball, hl = hl)
     else:
         return _ans
 
@@ -705,7 +720,7 @@ def _set_branch_config(branch_from):
     _cur_branch = _get_current_branch()
     _read_remote = _get_local('branch.%s.remote' % _cur_branch)
     _read_merge = _get_local('branch.%s.merge' % _cur_branch)
-    if _read_merge is None or _read_remote is None:
+    if _read_merge is '' or _read_remote is '':
         #read the values from the parent branch
         _parent_remote = _get_local('branch.%s.remote' % branch_from)
         _parent_merge = _get_local('branch.%s.merge' % branch_from)
@@ -754,21 +769,24 @@ def _get_version_change(with_previous_version = False):
 
 #show a lost of local/remote branches and do something
 def _switch_branch(isremote = False):
-    _curbranch, _tmp_list = _get_branch_list(isremote)
-    _list = BranchBall(_tmp_list)
-    for x in _index_list(list = _list.get_ball(), highlight =_curbranch):
-        print(x) #display a list of branches available
-    _selected_index = _get_answer(help = "You can: \
+    _curbranch, _branch_list = _get_branch_list(isremote)
+    _listball = BranchBall(_branch_list)
+    _selected = _get_answer(prefix = '---Branch List ---',
+                            help = "You can: \
                                        \n   Enter branch index or,\
                                        \n   Type the name for a new one or,\
                                        \n   Use '/d <branch_name>' to delete a branch\
-                                       \n   Press Enter to quit")
-    if _selected_index == '':
+                                       \n   Press Enter to quit",
+                                    ball = _listball,
+                                    hl = _curbranch)
+    if _selected == '':
         return "" #return if no branch is selected or created
-    else:
-        _selected_branch = _list[int(_selected_index)]
+    elif re.search('^\d+$', _selected): #a selected index
+        _selected_branch = _listball[int(_selected)]
+    else: # probably a new branch name
+        _selected_branch = _selected
     _tmp = ''
-    for line in _list:
+    for line in _branch_list:
         if line != '' and _selected_branch == line.split()[-1]:
             if isremote is True:
                 _local_branch = _get_answer(prompt = "Give a name for the new local branch:",
@@ -786,14 +804,15 @@ def _switch_branch(isremote = False):
                 _tmp = _invoke(['git checkout %s' % _selected_branch])
             return _tmp
     #we are here because the selected branch is not in the list
+    return _make_branch(_selected_branch)
+
+def _make_branch(branch):
     _previous_branch = _get_current_branch()
-    _tmp = _invoke(['git branch %s' % _selected_branch]) #create branch with the name given
-    _tmp = _invoke(['git checkout %s' % _selected_branch])
+    _tmp = _invoke(['git branch %s' % branch]) #create branch with the name given
+    _tmp = _invoke(['git checkout %s' % branch])
     _set_branch_config(branch_from = _previous_branch) #new branch, set the config properly
-    _result = 'branch ' + color['red'] + _selected_branch + _end_ +\
-              ' has been created and you have been switched to this branch'
-    _result += 'and its config is set based on ' +\
-               color['red'] + _selected_branch + _end_
+    _result = 'created and switched to new branch: ' + color['red'] + branch + _end_ + '\n'
+    _result += 'config is set based on ' + color['red'] + _previous_branch + _end_
     return _result
 
 def _make_branch_link_to_local_repo(bname, path):
@@ -866,12 +885,11 @@ def _add_to_source_list(item):
     _set_global('sourcelist.length', str(_len + 1))
 
 #show a list of items with index and one of the item highlighted
-def _index_list(list, begin = 0, index_color = 'green',
-                       highlight = -1, hl_color = 'red'):
-    return ['%s>> %d%s\t%s' %
+def _index_list(list, index_color = 'none', highlight = -1, hl_color = 'red'):
+    return ['%s%d >> %s\t%s' %
             (color[hl_color if index == highlight else index_color],
              index, _end_, x)
-            for (index, x) in zip(range(begin, len(list)), list)]
+            for (index, x) in zip(range(1, len(list) + 1), list)]
 
 #get a branch list. returns <master branch index>, <branch list>
 def _get_branch_list(isremote = False):
@@ -956,9 +974,15 @@ def _build_merge_arrows(obj):
 
 #return list of changed files and a list of untracked files from the output of 'git status -s'
 def _get_changed_files(str):
-    _changed_file_pattern = ' M.*'
+    if str is None:
+        return [], []
+    _changed_file_pattern = 'M.*'
+    _deleted_file_pattern = 'D.*'
+    _added_file_pattern = 'A.*'
     _untracked_file_pattern = '\?\?.*'
-    return [x.group() for x in re.finditer(_changed_file_pattern, str)],\
+    return [x.group() for x in re.finditer(_changed_file_pattern, str)] +\
+           [x.group() for x in re.finditer(_deleted_file_pattern, str)] +\
+           [x.group() for x in re.finditer(_added_file_pattern, str)],\
            [x.group() for x in re.finditer(_untracked_file_pattern, str)]
 
 #exit with error
@@ -1015,11 +1039,22 @@ def _revert_file(file):
 
 #delete a branch
 def _delete_branch(branch):
+    if branch == _get_current_branch():
+        return False, 'current branch %s cannot be deleted' % branch
     _cmd = "git branch -d %s" % branch
-    #if failed, try again with -D
-    print(_cmd)
-    #_invoke([_cmd])
-    #of course there should be some exception handling here
+    _tmp = _invoke([_cmd])
+    if _tmp.startswith('Deleted'):
+        return True, _tmp
+    elif 'is not fully merged' in _tmp: #check if we should try with -D
+        _ans = _get_answer(prompt = "%s is not fully merged. Delete it anyway? [y/N]" % branch,
+                           help = "it is likely you have changes in the branch.\n" +
+                                  "you can force deleting the branch, or quit.")
+        if _ans == 'y' or _ans == 'Y':
+            return True, _invoke(['git branch -D %s' % branch])
+        else:
+            return False, 'branch %s is not deleted' % branch
+    else: # what else is missing?
+        _exit_with_error(_tmp)
 
 def _delete_source(source):
     pass
@@ -1028,6 +1063,7 @@ def _push_to_remote_url(url):
     _cmd = 'git push origin %(cur_branch)s:%(url)s' %\
            {'cur_branch': _get_current_branch(), 'url': url}
     #TODO: need to update the local config file (perhaps supporting multiple branches to push?)
+    #TODO: there is a bug when i try to push to github, fix it~
     return _invoke([_cmd])
 
 #command to get local git config value
@@ -1035,6 +1071,11 @@ def _get_local(section):
     _command = 'git config --get %s' % section
     _tmp = _invoke([_command])
     return '' if _tmp is None else _tmp[:-1]
+
+def _set_local(section, value):
+    _command = 'git config --local %(section)s %(value)s' %\
+            {'section':section, 'value':value}
+    _tmp = _invoke([_command])
 
 #command to get global git config value
 def _get_global(section):
@@ -1115,7 +1156,7 @@ if __name__ == '__main__':
         try:
             result = CALL_TABLE[service[:3]](service[3:], sys.argv)
             print(result)
-        except KeyError:
+        except IndexError: #KeyError:
             GITSetup(sys.argv)
         #enable the error hiding for released version
         #except Exception:
