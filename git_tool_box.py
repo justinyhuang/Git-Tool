@@ -1167,7 +1167,9 @@ def _get_changed_files(str):
 
 #return the number of changed but not commited files
 def _num_uncommited_files():
-    return len(_invoke([_git_status(param = '-s -uno')]).split('\n'))
+    _tmp = _invoke([_git_status(param = '-s -uno')])
+    _tmp = _tmp.split('\n') if _tmp else []
+    return len(_tmp)
 
 #revert a file given in a file item
 def _revert_file_item(item):
