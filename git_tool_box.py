@@ -30,11 +30,7 @@ from optparse import OptionParser
 
 """
 TODO: think about a mechanism to handle unintensional interruption during, say, committing
-TODO: implement the \d command of Prompt Mode
-TODO: make it real that with the delete command one can delete a branch or a history entry.
-TODO: implement the feature to revert a file change with the delete command based on a gst output.
-      User should be able to invoke a gdi before determining to revert the file change.
-TODO: to give user indexes when selecting something, instead of typing the real item
+TODO: need to add support for git merge; need to consider the case when manual merge is needed
 """
 
 #-------------------GLOBAL SETTINGS-------------------
@@ -60,9 +56,9 @@ SERVICES = [
                'gcf',
                ['gst' + x for x in allperm('dr')], #combination of 'd', 'r'
                ['gst' + x for x in allperm('br')], #combination of 'b', 'r'
-               ['gst' + x for x in allperm('vr')], #combination of 'v', 'r'
                'gif', 'gift', 'gifg',
                'gbu',
+               'gmg',
                #'grs',
                'gbr',
                ['gbr' + x for x in allperm('rt')], #combination of 'r', 't'
@@ -107,18 +103,19 @@ class Ball(object):
     def __init__(self, list, **param):
         self._list = list     #all the data will be stored in a list
         self._param = param   #for any future extended functionalities
+    def __getitem__(self, k):
+        return self._list[k]
     def get_list(self):
         return self._list
     def get_indexed_list(self, highlight):
         return _index_list(self._list, highlight = highlight)
-    def __getitem__(self, k):
-        return self._list[k]
-    def delete(self, item_list):
+    def delete(self, item_list, func):
         item_list.sort(reverse=True) #remove the very last item in the list first
-        #only remove the item from the list,
-        #specific delete will be done in children objects.
         for x in item_list:
-            self._list.remove(self._list[x])
+            _result, _msg = func(self._list[x])
+            if _result is True: #user might choose not to delete
+                self._list.remove(self._list[x])
+            print _msg
 
 class BranchBall(Ball):
     """
@@ -127,12 +124,7 @@ class BranchBall(Ball):
     def __init(self, list, **param):
         super(BranchBall, self).__init__(list)
     def delete(self, item_list):
-        for x in item_list:
-            _result, _msg = _delete_branch(self._list[x])
-            if _result is False: # the item is not deleted
-                item_list.remove(x)
-            print(_msg)
-        super(BranchBall, self).delete(item_list)
+        super(BranchBall, self).delete(item_list, _delete_branch)
 
 class FileBall(Ball):
     """
@@ -141,9 +133,7 @@ class FileBall(Ball):
     def __init(self, list, **param):
         super(FileBall, self).__init__(list)
     def delete(self, item_list):
-        for x in item_list:
-            _revert_file(self._list[x])
-        super(FileBall, self).delete(item_list)
+        super(FileBall, self).delete(item_list, _revert_file_item)
 
 class SourceBall(Ball):
     """
@@ -153,8 +143,8 @@ class SourceBall(Ball):
         super(FileBall, self).__init__(list)
     def delete(self, item_list):
         for x in item_list:
-            _delete_source(self._list[x])
-        super(FileBall, self).delete(item_list)
+            if _delete_source(self._list[x]) is True: #user might choose not to delete
+                super(FileBall, self).delete_item(x)
 
 class GITError(Exception):
     """base class of all GitTool error exceptions"""
@@ -222,6 +212,24 @@ def GITGet(srv, param):
         _add_to_source_list(_source)
     return _tmp
 
+def GITMerge(srv, param):
+    """ gmg
+        Git MerGe changes in a branch to another.
+    """
+    _check_git_path()
+    #get local/remote branch list
+    _cur_branch_index, _branch_list = _get_branch_list(False)
+    _branch_list += _get_branch_list(True)[1]
+    _ball = BranchBall(_branch_list)
+    #ask for the 'from' branch
+    _from = _get_answer(prompt = 'Select the branch to merge ' + color['red'] + 'from' + _end_,
+                        hl = _cur_branch_index, ball = _ball)
+    #ask for the 'to' branch
+    _to = _get_answer(prompt = 'Select the branch to merge ' + color['red'] + 'to' + _end_,
+                      hl = _cur_branch_index, ball = _ball)
+    #do the merge
+    return _merge_branch(_branch_list[int(_from)], _branch_list[int(_to)])
+
 def GITPut(srv, param):
     """ gpt
         Git PuT the local changes to a remote repository
@@ -267,6 +275,46 @@ def GITStatus(srv, param):
              with (d), the tool will only show a list of changed files in the
              current directory
     """
+    _git_status_code =\
+    """
+        XY PATH1 -> PATH2 maps to
+        [Stage Status][Worktree Status] [Path in HEAD] -> [Path in Stage/Worktree]
+            _ = unmodified
+            M = modified
+            A = added
+            D = deleted
+            R = renamed
+            C = copied
+            U = updated but unmerged
+
+            Ignored files are not listed, unless --ignored option is in effect,
+            in which case XY are !!.
+
+            X        Y    Meaning
+            ----------------------------------------------
+            _       [MD]  not updated
+            M      [_MD]  updated in index
+            A      [_MD]  added to index
+            D       [_M]  deleted from index
+            R      [_MD]  renamed in index
+            C      [_MD]  copied in index
+            [MARC]    _   index and work tree matches
+            [_MARC]   M   work tree changed since index
+            [_MARC]   D   deleted in work tree
+            ----------------------------------------------
+            D         D   unmerged, both deleted
+            A         U   unmerged, added by us
+            U         D   unmerged, deleted by them
+            U         A   unmerged, added by them
+            D         U   unmerged, deleted by us
+            A         A   unmerged, both added
+            U         U   unmerged, both modified
+            ----------------------------------------------
+            ?         ?   untracked
+            !         !   ignored
+            ----------------------------------------------
+        * http://progit.org/book/ch2-2.html has more details
+    """
     _check_git_path()
     _isdir, _isremote = ('d' in srv), ('r' in srv)
     _compare_str = param[1] if len(param) > 1 else None
@@ -276,40 +324,41 @@ def GITStatus(srv, param):
         except ConfigItemMissing:
             _exit_with_error("There are item or section missing in the config file")
     #depends on the compare_str, this could be a'git status' or a 'git diff''
-    _cmd = _status_cmd(compare_str = _compare_str, param = '-s')
+    _cmd = _status_cmd(compare_str = _compare_str, param = '-s') # '-s' gives a compact output
     if _isdir is True: #only show the touched files in the current directory
         _cmd += ' -- ' + os.getcwd()
-    _tmp_result = _invoke([_cmd])
+    _tmp = _invoke([_cmd])
+    _status = _translate_status_code(_tmp)
     _final_str = '' # prepare for a prettified outcome
     if _compare_str is not None:#show changed files between two commits
         if '..' in _compare_str: #two compare candidates are given
             _comp2, _comp1 = _compare_str.split('..')
         else:
-            if _if_ver_exist(_compare_str) is True: #only one candidate given, which is a version
-                _comp2, _comp1 = _compare_str, _get_versions(1)[0]
-            elif 'unknown revision' in _tmp_result: #something wrong with the given candidate
-                _exit_with_error('unknown version/branch, please check')
-            else:#assume this is comparison between branches
+            if _if_branch_exist(_compare_str) is True: #only one candidate given, which is a branch
                 _comp2, _comp1 = _compare_str, _get_current_branch()
+            elif 'unknown revision' in _status: #something wrong with the given candidate
+                _exit_with_error('unknown version/branch, please check')
+            else:#assume this is comparison between versions
+                _comp2, _comp1 = _compare_str, _get_versions(1)[0]
             _changed_not_commited_sign = ' *' if _get_changed_uncommited_file_list() is not None\
                                               else ''
             _comp1 += _changed_not_commited_sign
-        if _tmp_result is None or _tmp_result.strip(' ') is None:
-            _tmp_result = '' #there is no changes found
+        if _status is None or _status.strip(' ') is None:
+            _status = '' #there is no changes found
             _changes = 0
         else:
-            _changes = len(_tmp_result.split('\n')) - 1
-        _changed = _tmp_result.split('\n')[:-1]
+            _changes = len(_status.split('\n')) - 1
+        _changed = _status.split('\n')[:-1]
         _untracked= []
     else: #show changed but not yet commited files, with indexes added
-        _changed, _untracked= _get_changed_files(_tmp_result)
+        _changed, _untracked= _get_changed_files(_status)
         _changes = len(_changed)
         _comp2, _comp1 = _get_current_branch(), 'working copy'
     _total = 'Changed files: ' + color['red'] + str(_changes) + _end_
     _files = FileBall(_changed + _untracked)
-    _ans = _get_answer(prompt = '', postfix = _make_msg_bar(_make_status_header(_comp1, _comp2)),
-                       help = 'use /d to revert a changed file, or Enter to quit',
-                       ball = _files)
+    _ans = _get_answer(prefix = _make_msg_bar(_make_status_header(_comp1, _comp2)), prompt = '',
+                       ball = _files,
+                       help = _git_status_code + '/d to revert a changed file, or Enter to quit')
     return ''
 
 def GITBranch(srv, param):
@@ -336,7 +385,6 @@ def GITBranch(srv, param):
     if _hasbranch is _hastag is False: #user doesn't give any arguments
         return _switch_branch(_isremote) #select a branch a list of local/remote branches
     else: #user gives either a branch name, or a tag
-        #TODO: need to implement support for creating a branch
         _name = param[1]
         _cmd = 'git checkout '
         if _hasbranch is True: #checkout a branch with the given branch name
@@ -555,7 +603,7 @@ def GITDiff(srv, param):
     if _difftool == 'vimdiff':
         os.system(_cmd)
     else:
-        print([_cmd])
+        print(_cmd)
         _tmp = _invoke([_cmd])
     return ''
 
@@ -689,12 +737,12 @@ def _get_answer(prefix = '', prompt = '', postfix = '',
     else:
         _ps = PROMPT_SIGN
     if ball: # when a ball is given, show the item list in the ball.
-        _prompt = prefix + '\n' +\
+        _prompt = (prefix + '\n' if prefix else '') +\
                   '\n'.join(ball.get_indexed_list(highlight = hl)) + '\n' +\
-                  postfix + '\n' + prompt
+                  (postfix + '\n' if postfix else '') + prompt
     else:
         _prompt = prompt
-    _ans = raw_input(_prompt + _ps)
+    _ans = raw_input(_prompt + _ps).strip(' ')
     while _ans == '/h':
         _ans = raw_input(help + _ps)
     if '/e' == _ans:
@@ -702,7 +750,7 @@ def _get_answer(prefix = '', prompt = '', postfix = '',
     elif _ans.startswith('/d '):
         if ball is None:
             _exit_with_error("no ball is passed while a delete is required")
-        if re.search('^\/d \d+([\s,-]+\d+)*\s*$', _ans): #space or ',' can be used as separator
+        if re.search('^\/d\s+\d+([\s,-]+\d+)*\s*$', _ans): #space or ',' can be used as separator
             #expand strings like '1-3' to '1 2 3' to further get all the indexes to delete
             _tmp = re.sub('\d+[\s]*-[\s]*\d+', _expand_indexes_from_range, _ans[3:])
             ball.delete([int(x.group()) for x in re.finditer('\d+', _tmp)]) #get all indexes
@@ -766,6 +814,16 @@ def _get_version_change(with_previous_version = False):
         return None, None
     else:
         return _file_list, _version_str
+
+#merge branch, assuming frombr and tobr are valid branches
+def _merge_branch(frombr, tobr):
+    _cur = _get_current_branch()
+    _invoke(['git checkout %s' % tobr]) #switch to the target branch
+    _tmp = _invoke(['git merge %s' % frombr]) #try auto merge
+    if 'Automatic merge failed' in _tmp: #need manual merge
+        os.system('git mergetool')
+        _tmp = 'Done'
+    return _tmp
 
 #show a lost of local/remote branches and do something
 def _switch_branch(isremote = False):
@@ -889,7 +947,7 @@ def _index_list(list, index_color = 'none', highlight = -1, hl_color = 'red'):
     return ['%s%d >> %s\t%s' %
             (color[hl_color if index == highlight else index_color],
              index, _end_, x)
-            for (index, x) in zip(range(1, len(list) + 1), list)]
+            for (index, x) in zip(range(0, len(list)), list)]
 
 #get a branch list. returns <master branch index>, <branch list>
 def _get_branch_list(isremote = False):
@@ -974,25 +1032,29 @@ def _build_merge_arrows(obj):
 
 #return list of changed files and a list of untracked files from the output of 'git status -s'
 def _get_changed_files(str):
-    if str is None:
-        return [], []
-    _changed_file_pattern = 'M.*'
-    _deleted_file_pattern = 'D.*'
-    _added_file_pattern = 'A.*'
-    _untracked_file_pattern = '\?\?.*'
-    return [x.group() for x in re.finditer(_changed_file_pattern, str)] +\
-           [x.group() for x in re.finditer(_deleted_file_pattern, str)] +\
-           [x.group() for x in re.finditer(_added_file_pattern, str)],\
-           [x.group() for x in re.finditer(_untracked_file_pattern, str)]
+    _changed_files, _untracked_files = [], []
+    if str is not None:
+        _changed_pattern = '^[_MDACU]{1,2}' #modifed/deleted/added/copied/unmerged files
+        _untracked_pattern = '^\?\?.*' #untracked files
+        _file_list = str.split('\n')[:-1]
+        for x in _file_list:
+            _changed_files += [x] if re.search(_changed_pattern, x) else []
+            _untracked_files += [x] if re.search(_untracked_pattern, x) else []
+    return _changed_files, _untracked_files
 
 #exit with error
 def _exit_with_error(msg = ''):
     print("Exit with error :\n" + msg)
     sys.exit()
 
-#exit with error
 def _exit():
     sys.exit()
+
+# translate the output of git status -s into git-tool's format
+def _translate_status_code(ori):
+    return re.sub('^[MADRC ]{2}|\n[MADRC ]{2}', #replace space status code to '_'
+                  lambda x : x.group().replace(' ', '_'),
+                  ori)
 
 #print the header of status result
 def _make_status_header(ver1, ver2):
@@ -1022,18 +1084,19 @@ def _get_remote_refspec(name):
     _remote = _remote.strip('+')
     return _remote, _local
 
-#revert a file
-def _revert_file(file):
-    _file = file[file.rfind(' ') + 1:] #get the real file name
-    _cmd = _status_cmd(param = '-s ' + _file)  #'git status -s <file>' to obtain the status
-    _tmp = _invoke(_cmd).strip()
-    if _tmp.startswith('M') or _tmp.startswith('A') or\
-       _tmp.startswith('D') or _tmp.startswith('R'): #the file has uncommited changes
+#revert a file given in a file item
+def _revert_file_item(item):
+    _file = item[item.rfind(' ') + 1:] #get the real file name
+    if re.search('^_[MD]', item):    #not updated
         _invoke(['git checkout ' + _file])
-        print('%s reverted' % _file)
-    elif _tmp.strip().startswith('??'): #the file is out of version control
+    elif re.search('^[MARCD]_', item): #index and worktree are the same, need to reset first
+        _invoke(['git reset ' + _file])
+        _invoke(['git checkout ' + _file])
+    elif item.strip().startswith('??'): #the file is out of version control
         _invoke(['rm ' + _file])
-        print('%s deleted' % _file)
+    else:
+        _exit_with_error('oops, some exceptions occur')
+    return True, '%s reverted' % _file
     #TODO: what to do if file is commited, but need to delete from a diff list
     #   this means we need to copy a specified version to overwrite
 
@@ -1094,6 +1157,11 @@ def _if_ver_exist(ver):
     _tmp = _invoke(['git rev-parse ' + ver])
     return not re.search('unknown revision', _tmp)
 
+#my way to figure out if a branch exist, returns False when a hash is given
+def _if_branch_exist(branch):
+    _tmp = _invoke(['git show-ref -s ' + branch])
+    return _tmp is not None
+
 def _remove_link_file(x):
     _fullpath = sys.argv[0]
     _dir = _fullpath[:_fullpath.rfind('/') + 1]
@@ -1129,6 +1197,7 @@ CALL_TABLE = { 'gst': GITStatus,
                'gif': GITInfo,
                'gbu': GITBackup,
                'gdi': GITDiff,
+               'gmg': GITMerge,
                'gcf': GITConfig,
                'ggt': GITGet,
                'gpt': GITPut }
@@ -1153,11 +1222,8 @@ if __name__ == '__main__':
         if len(sys.argv) == 2 and sys.argv[1] == '?':
             print(CALL_TABLE[service[:3]].__doc__)
             _exit()
-        try:
-            result = CALL_TABLE[service[:3]](service[3:], sys.argv)
-            print(result)
-        except IndexError: #KeyError:
-            GITSetup(sys.argv)
-        #enable the error hiding for released version
-        #except Exception:
+        #try:
+        result = CALL_TABLE[service[:3]](service[3:], sys.argv)
+        print(result)
+        #except Exception: #try to catch all errors/exceptions here
         #    print("unhandled error, please check your inputs")
