@@ -31,6 +31,7 @@ from optparse import OptionParser
 """
 TODO: think about a mechanism to handle unintensional interruption during, say, committing
 TODO: need to add support for git merge; need to consider the case when manual merge is needed
+TODO: check files in /usr/lib/git-core in workstation and see how to enable write permission when doing vimdiff
 """
 
 #-------------------GLOBAL SETTINGS-------------------
@@ -313,6 +314,10 @@ def GITStatus(srv, param):
             ?         ?   untracked
             !         !   ignored
             ----------------------------------------------
+
+        When comparing between versions/branches, there will be no detailed status code.
+        In Git-Tool a '*' is used in this case instead.
+
         * http://progit.org/book/ch2-2.html has more details
     """
     _check_git_path()
@@ -328,7 +333,7 @@ def GITStatus(srv, param):
     if _isdir is True: #only show the touched files in the current directory
         _cmd += ' -- ' + os.getcwd()
     _tmp = _invoke([_cmd])
-    _status = _translate_status_code(_tmp)
+    _status = _translate_status_code(_cmd, _tmp)
     _final_str = '' # prepare for a prettified outcome
     if _compare_str is not None:#show changed files between two commits
         if '..' in _compare_str: #two compare candidates are given
@@ -478,7 +483,7 @@ def GITInfo(srv, param):
         return _invoke(_cmd, detached=True) #feed the data to dotty
     return _result
 
-def GITBackup(srv, param):
+def GITBackup(srv = '', param = ''):
     """ gbu
         commit/backup the changes to the local repository
              Changes can be back-up to the current branch, or another branch you
@@ -589,8 +594,6 @@ def GITDiff(srv, param):
                 break
         if _file is None: #cannot find a valid file name in the param
             _exit_with_error("cannot identify a valid file name\n")
-    else: #TODO: put a check here to warn user when there is a lot of files to be shown
-        pass
     if _isremote == False: #handle local diff operation.
         if _isversion == True: # version diff is only supported locally
             if '?' == _versions: #allow user to select versions on the fly
@@ -599,6 +602,11 @@ def GITDiff(srv, param):
         _remote_branch = _get_remote_branch()
     _cmd = 'git difftool -y -t %(t)s %(v)s %(r)s %(f)s' %\
            {'t': _difftool, 'v': _versions, 'r': _remote_branch, 'f': _file}
+    #if there are too many files, warn the user before doing diff
+    if _number_of_changed_files(_versions, _remote_branch, _file) > 7: # i guess 7 is a good limit
+        _ans = _get_answer(prompt = 'seems like there are too many to compare, continue?[y/N]')
+        if _ans != 'y' and _ans != 'Y':
+            _exit()
     #for vim it appears we need to invoke it via os.system to make it work correctly
     if _difftool == 'vimdiff':
         os.system(_cmd)
@@ -823,6 +831,9 @@ def _merge_branch(frombr, tobr):
     if 'Automatic merge failed' in _tmp: #need manual merge
         os.system('git mergetool')
         _tmp = 'Done'
+    _ans = _get_answer(prompt = 'merge complete. back up the merge now?[y/N]')
+    if _ans == 'y' or _ans == 'Y':
+        GITBackup()
     return _tmp
 
 #show a lost of local/remote branches and do something
@@ -1030,6 +1041,12 @@ def _build_merge_arrows(obj):
                 {'f':_from, 'v':x}
     return _tmp
 
+def _number_of_changed_files(_versions = '', _remote_branch = '', _file = ''):
+    if _file:
+        return 1
+    _tmp = _invoke(['git diff --name-only ' + (_versions if _versions else _remote_branch)])
+    return len(_tmp.split('\n')) - 1
+
 #return list of changed files and a list of untracked files from the output of 'git status -s'
 def _get_changed_files(str):
     _changed_files, _untracked_files = [], []
@@ -1051,10 +1068,18 @@ def _exit():
     sys.exit()
 
 # translate the output of git status -s into git-tool's format
-def _translate_status_code(ori):
-    return re.sub('^[MADRC ]{2}|\n[MADRC ]{2}', #replace space status code to '_'
-                  lambda x : x.group().replace(' ', '_'),
-                  ori)
+def _translate_status_code(cmd, ori):
+    if ori is None:
+        return ''
+    else:
+        if cmd.startswith('git status'): #status code is given by git status
+            return re.sub('^[MADRC ]{2}|\n[MADRC ]{2}', #replace space status code to '_'
+                          lambda x : x.group().replace(' ', '_'),
+                          ori)
+        else: #status code is not available when command is git diff
+            return re.sub('^|\n', #no status code is available when using git diff
+                          lambda x: x.group() + '*  ',
+                          ori)
 
 #print the header of status result
 def _make_status_header(ver1, ver2):
