@@ -1,6 +1,6 @@
 #!/usr/bin/python -W ignore::DeprecationWarning
 """
-GitBox - a utility set for easier use of git
+Git-Tool - a utility set for easier use of git
 
 Available services:
    gbu: Git BackUp, commit changes in the working copy to local repository
@@ -14,6 +14,9 @@ Available services:
 Proposed services:
    gfl: Git File, to fetch a file from a version
    gpa: Git PAtch
+Dependencies (please install):
+   git: Git-Tool is a wrapper of git
+   graphviz and qiv: Git-Tool needs both to show graphical version tree via gifg
 """
 import os
 import re
@@ -336,6 +339,8 @@ def GITGet(srv, param):
         _add_to_source_list(_source)
     return _tmp
 
+_dot_file = '/tmp/gittool.dotty.tmp'
+_svg_file = '/tmp/gittool.dotty.svg'
 def GITInfo(srv, param):
     """gif
        to display the version/branch/tag info
@@ -402,9 +407,10 @@ def GITInfo(srv, param):
         _result = 'digraph G{\nnode [shape=record]\n'\
                 + re.sub('"[a-f0-9]{7}":f0 -> \{[ a-f0-9]+\}', _build_merge_arrows, _result)\
                 + '}' #get data ready for dotty
-        with open('/tmp/gittool.dotty.tmp', 'w') as f:
+        with open(_dot_file, 'w') as f:
             f.write(_result)
-        _cmd = ['dotty', '/tmp/gittool.dotty.tmp']
+        _tmp = _invoke(['dot -Tsvg %s > %s' % (_dot_file, _svg_file)])
+        _cmd = ['qiv', _svg_file]
         return _invoke(_cmd, detached=True) #feed the data to dotty
     return _result
 
@@ -775,14 +781,14 @@ def _expand_indexes_from_range(obj):
         _tmp += ' %d ' % x
     return _tmp
 
-#used in re.su to modify the matching string
+#used in re.sub to modify the matching string
 def _build_merge_arrows(obj):
     _tmp = ''
     _line = obj.group()
     _from = _line[1:8]
     _list = re.findall('[a-f0-9]{7}', _line[7:])
     for x in _list:
-        _tmp += '"%(f)s":f0 -> "%(v)s":f0 [color=blue style=bold arrowhead=none arrowtail=vee]\n' %\
+        _tmp += '"%(v)s":f0 -> "%(f)s":f0 [color=blue style=bold arrowhead=vee]\n' %\
                 {'f':_from, 'v':x}
     return _tmp
 
@@ -1304,8 +1310,8 @@ if __name__ == '__main__':
         if len(sys.argv) == 2 and sys.argv[1] == '?':
             print(CALL_TABLE[service[:3]].__doc__)
             _exit()
-        #try:
-        result = CALL_TABLE[service[:3]](service[3:], sys.argv)
-        print(result)
-        #except Exception: #try to catch all errors/exceptions here
-        #    print("unhandled error, please check your inputs")
+        try:
+            result = CALL_TABLE[service[:3]](service[3:], sys.argv)
+            print(result)
+        except KeyError: #if no available service is found, try to install git-tool
+            GITSetup(sys.argv)
