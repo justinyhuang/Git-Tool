@@ -9,13 +9,9 @@ Available services:
    gst: Git STatus, list modified/added/removed files between versions/branches
    gbr: Git Switch, switch/create to a branch/tag, remotely or locally
    gdi: Git DIff, compare file/s between versions/branches
+   ggt: Git GeT, to get a copy of the target repository
    ghelp: help info for GITUtil
 Proposed services:
-   ggt: Git GeT, to get a copy of the target repository
-   grs: Git ReStore, go back to a previous backup version
-   gpl: Git PulL, pull lastest version from the remote repository
-   gpp: Git Prepare, set up a new sandbox with all your changes inside
-        *This is for preparing a clean sandbox to submit for integration
    gfl: Git File, to fetch a file from a version
    gpa: Git PAtch
 """
@@ -31,6 +27,8 @@ from optparse import OptionParser
 """
 TODO: think about a mechanism to handle unintensional interruption during, say, committing
 TODO: check files in /usr/lib/git-core in workstation and see how to enable write permission when doing vimdiff
+TODO: make use of easy install?
+TODO: add write functionalities to gitconfig
 """
 
 #-------------------GLOBAL SETTINGS-------------------
@@ -179,6 +177,8 @@ def GITConfig(srv, param):
     _current_branch_merge = _get_local('branch.%s.merge' % _current_branch)
     _remote_branch = _get_remote_branch()
     #global settings
+    _email = _get_global('user.email')
+    _username = _get_global('user.name')
     _first_diff_tool = _get_global('difftool.first')
     _second_diff_tool = _get_global('difftool.second')
     _third_diff_tool = _get_global('difftool.third')
@@ -190,6 +190,8 @@ def GITConfig(srv, param):
     _ret += "merge value: %s\n" % _current_branch_merge
     _ret += "remote branch: %s\n" % _remote_branch
     _ret += color['yellow'] + "---Global Settings---\n" + _end_
+    _ret += "user name: %s\n" % _username
+    _ret += "user email: %s\n" % _email
     _ret += "1st diff tool: %s\n" % _first_diff_tool
     _ret += "2nd diff tool: %s\n" % _second_diff_tool
     _ret += "3rd diff tool: %s\n" % _third_diff_tool
@@ -428,7 +430,7 @@ def GITPut(srv, param):
     """ gpt
         Git PuT the local changes to a remote repository
         A 'gpt' will try to push the changes to a previously used branch.
-        Do 'gpt <branch-path>' to push the changes to a new branch.
+        [not implemented yet] Do 'gpt <branch-path>' to push the changes to a new branch.
     """
     _check_git_path()
     _url = _get_remote_url()
@@ -438,7 +440,9 @@ def GITPut(srv, param):
                                   "You have to tell where you'd like to push your changes, \n" +
                                   "or exit to fix it in other means.")
         if _ans == 'y' or _ans == 'Y':
-            _url = _get_answer(prompt = "url = ", help ='')
+            #TODO: need to add function for adding a remote section
+            #_url = _get_answer(prompt = "url = ", help ='')
+            _exit_with_error('not implemented yet')
         else:
             _exit()
     else:
@@ -446,7 +450,7 @@ def GITPut(srv, param):
                            help = "")
         if _ans == 'n' or _ans == 'N':
             _exit()
-    return _push_to_remote_url(_url) #do a push with the given url
+    return _push_to_remote() #do a push with the given url
 
 #setup the environment for first use
 def GITSetup(param):
@@ -1021,8 +1025,10 @@ def _get_remote_refspec(name):
     _remote = _remote.strip('+')
     return _remote, _local
 
-def _push_to_remote_url(url):
-    _cmd = _git_push(branch = _get_current_branch(), url = url)
+def _push_to_remote(url):
+    remote = _get_local('branch.%s.remote' % _get_current_branch())
+    _cmd = _git_push(branch = _get_current_branch(), remote = remote)
+    pdb.set_trace()
     #TODO: need to update the local config file (perhaps supporting multiple branches to push?)
     #TODO: there is a bug when i try to push to github, fix it~
     return _invoke([_cmd])
@@ -1229,9 +1235,8 @@ def _git_branch(lsoption = None, del_branch = '', force_del_branch = '',
         return 'git branch --contains %s' % contains
     return 'git branch %s' % branch
 
-def _git_push(branch = '', url = ''):
-    _param = ('%s:%s' % (branch, url)) if branch and url else ''
-    return 'git push origin %s' % _param
+def _git_push(branch, remote):
+    return 'git push %s %s' % (remote, branch)
 
 def _git_rebase(param = ''):
     return 'git rebase %s' % param
