@@ -1025,7 +1025,7 @@ def _get_remote_refspec(name):
     _remote = _remote.strip('+')
     return _remote, _local
 
-def _push_to_remote(url):
+def _push_to_remote():
     remote = _get_local('branch.%s.remote' % _get_current_branch())
     _cmd = _git_push(branch = _get_current_branch(), remote = remote)
     pdb.set_trace()
