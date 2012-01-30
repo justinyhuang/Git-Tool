@@ -1028,7 +1028,6 @@ def _get_remote_refspec(name):
 def _push_to_remote():
     remote = _get_local('branch.%s.remote' % _get_current_branch())
     _cmd = _git_push(branch = _get_current_branch(), remote = remote)
-    pdb.set_trace()
     #TODO: need to update the local config file (perhaps supporting multiple branches to push?)
     #TODO: there is a bug when i try to push to github, fix it~
     return _invoke([_cmd])
