@@ -15,12 +15,39 @@ GitTool is specialized for those who need to use git everyday but don't like to 
 
 FEATURES
 - Easy, short yet powerful commands. In most cases a GitTool command varies from 3 to 5 characters. Very few arguments are required. Some examples are given below as comparison:
-   Git Command                         GitTool Command
-   git diff 
-   git log
-   git fetch
+
+  To show changed but not commited files
+  GitTool Command: gst
+
+  To show changed files between working copy and the remote tracked branch
+  GitTool Command: gstr
+
+  To show changed files between working copy and version/branch xxx
+  GitTool Command: gst xxx
+
+  To check the logs of latest 3 commits
+  GitTool Command: gif 3
+
+  To check the logs of latest 3 commits, in a graphical version tree
+  GitTool Command: gifg 3
+
+  To do a diff of the changed files between version xxx and yyy
+  GitTool Command: gdiv xxx..yyy
+
+  To do a diff with vimdiff in a remote-connection, and meld in a local workstation, and bc3 when someone like to see it in bcompare
+  GitTool Command: gdi/gdi1/gid2
+  #when you configure the primary/secondary/last diff tool to vimdiff/meld/bc3 when you use the tool for the first time
+
+  and many other use cases....
+
 - Graphic git history presentation. A slightly better graphical presentation compared to those by other tools like gitk.
-- View configuration similar to ClearCase. GitTool provides a means to select files from different commits/versions, yet with some version control capabilities.
+  For example, to show a graphical version tree of the last 10 nodes, 'gifg 10' will show you the graph.
+  Powered by Graphviz and qiv =)
+
+- Iterative mode. In many cases you will be give a list of branches/changed files/repositories.
+  You can manipulate branches/files/repositories easily, instead of being a Git Guru.
+
+- View configuration similar to ClearCase. GitTool provides a means to select files from different commits/versions, yet with some version control capabilities. [to be implemented]
 
 INSTALL
 "Why do I need to install?"
