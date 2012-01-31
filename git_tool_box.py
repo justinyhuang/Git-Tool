@@ -307,7 +307,7 @@ def GITGet(srv, param):
     for r, _index in zip(_source_list, range(len(_source_list))):
         print("%d  -  %s" % (_index, r))
     _tmp = _get_answer(prompt = 'What source would you like to clone from',
-                       help = 'select the source by the index number' +
+                       help = 'select the source by the index number, if available.\n' +
                               'or type in the repository/branch')
     #TODO: check if the local config merge and remote values are correct
     if re.match('^\d+$', _tmp) is not None:
@@ -1041,7 +1041,7 @@ def _push_to_remote():
 #command to get local git config value
 def _get_local(section):
     _tmp = _invoke([_git_config(config = 'local', section = section)])
-    return '' if _tmp is None else _tmp[:-1]
+    return None if _tmp is None else _tmp[:-1]
 
 def _set_local(section, value):
     _tmp = _invoke([_git_config(config = 'local', section = section, value = value)])
@@ -1049,7 +1049,7 @@ def _set_local(section, value):
 #command to get global git config value
 def _get_global(section):
     _tmp = _invoke([_git_config(config = 'global', section = section)])
-    return '' if _tmp is None else _tmp[:-1]
+    return None if _tmp is None else _tmp[:-1]
 
 #command to set global git config value
 def _set_global(section, value):
@@ -1118,10 +1118,10 @@ def _check_git_path():
 #-------------------source helppers
 #get the source list length
 def _get_source_list_len():
-    _len = int(_get_global('sourcelist.length'))
+    _len = _get_global('sourcelist.length')
     if _len is None:
-        raise ConfigItemMissing
-    return _len
+        return 0
+    return int(_len)
 
 #read the remembered source list
 def _get_source_list():
