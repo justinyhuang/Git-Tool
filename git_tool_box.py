@@ -1233,7 +1233,7 @@ def _git_mergetool(param = ''):
 def _git_branch(lsoption = None, del_branch = '', force_del_branch = '',
                 branch = '', contains = ''):
     if lsoption:
-        return 'git branch --list %s' % lsoption
+        return 'git branch -l %s' % lsoption
     if del_branch:
         return 'git branch -d %s' % del_branch
     if force_del_branch:
