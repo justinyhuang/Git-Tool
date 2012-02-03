@@ -30,8 +30,8 @@ from optparse import OptionParser
 """
 TODO: think about a mechanism to handle unintensional interruption during, say, committing
 TODO: check files in /usr/lib/git-core in workstation and see how to enable write permission when doing vimdiff
-TODO: make use of easy install?
 TODO: add write functionalities to gitconfig
+TODO: modify all related string operations so that AttributeError's won't occur
 """
 
 #-------------------GLOBAL SETTINGS-------------------
@@ -144,6 +144,8 @@ def GITBranch(srv, param):
     if _hasbranch is _hastag is False: #user doesn't give any arguments
         return _switch_branch(_isremote) #select a branch a list of local/remote branches
     else: #user gives either a branch name, or a tag
+        if _num_args is not 2:
+            _exit_with_error("missing parameters...")
         _name = param[1]
         _cmd = _git_checkout()
         if _hasbranch is True: #checkout a branch with the given branch name
@@ -354,7 +356,7 @@ def GITInfo(srv, param):
                 with (t) you will get the tag info if there is any.
                     * fetching tag info would take a bit more time
                 with (g) you will get graphic version tree expression based on a dot file.
-                    *NOTE*: graphviz is required to enable the 'g' option
+                    *NOTE*: graphviz and qiv is required to enable the 'g' option
     """
     _check_git_path()
     _if_graphic, _if_show_tag = ('g' in srv), ('t' in srv)
@@ -370,10 +372,9 @@ def GITInfo(srv, param):
             _range = 'HEAD' + _num * '^' + '...HEAD' + ' --ancestry-path'
         #_format = '"%h" [label="<f0> %h|{<f1> %an|<f2> %cd}"]\n"%h":f0 -> {%p}'
         _format = """"%h" [label=<<TABLE>
-                                <TR><TD ROWSPAN="3" PORT="f0" BGCOLOR="bisque">%h</TD>
+                                <TR><TD ROWSPAN="2" PORT="f0" BGCOLOR="bisque">%h</TD>
                                     <TD>%an</TD></TR>
-                                <TR><TD>%ci</TD></TR>
-                                <TR><TD><FONT COLOR="red"> %d</FONT></TD></TR>
+                                <TR><TD>%cd</TD></TR>
                                 </TABLE>>]\n"%h":f0 -> {%p}
                   """
     else:
@@ -391,27 +392,30 @@ def GITInfo(srv, param):
         _logs = _split(_invoke([_cmd]), '\n')
         _result = ''
         for _line in _logs:
-            [_date, _hash, _comment, _tmp] = _split(_line, '|')
+            [_date, _hash, _comment, _tmp] = _line.split('|') if _line else ['', '', '', '']
             _tmp = _split(_tmp.strip(' ()'), ', ')
             _branch = _get_branches_with_commit(_hash)
-            try: #check if the hash has tags attached
-                _container_tags = _invoke(["git tag --contains %s" % _hash])
-                _container_tags = _split(_container_tags, '\n')
-                #get the tags on this specific version
+            _container_tags = _invoke(["git tag --contains %s" % _hash])
+            _container_tags = _split(_container_tags, '\n')
+            if _container_tags:
+                #the hash has tags attached, get the tags on this specific version
                 _tags = list(set(_tmp) & set(_container_tags))
                 _result += '___\n'
                 _result += 'Rev: %s\nDate: %s\nBranch: %s\nComment: %s\nTags: %s\n' %\
                            (_hash, _date, _branch, _comment, _tags)
-            except AttributeError: #a version without any tag
+            else: #a version without any tag
                 _result += '___\n'
                 _result += 'Rev: %s\nDate: %s\nBranch: %s\nComment: %s\n' %\
                            (_hash, _date, _branch, _comment)
         return _result
-    _result = _invoke([_git_log(version = _range, format = _format)])
-    #TODO: how to show the branch name in the graph???
+    else:
+        _result = _invoke([_git_log(version = _range, format = _format,
+                                    param = '--date=short')])
     if _if_graphic is True:
+        #link versions with arrows
+        _result = re.sub('"[a-f0-9]{7}":f0 -> \{[ a-f0-9]+\}', _build_merge_arrows, _result)
         _result = 'digraph G{\nnode [shape=plaintext]\n'\
-                + re.sub('"[a-f0-9]{7}":f0 -> \{[ a-f0-9]+\}', _build_merge_arrows, _result)\
+                + _result\
                 + '}' #get data ready for dotty
         with open(_dot_file, 'w') as f:
             f.write(_result)
@@ -790,7 +794,7 @@ def _expand_indexes_from_range(obj):
         _tmp += ' %d ' % x
     return _tmp
 
-#used in re.sub to modify the matching string
+#used in re.sub to modify the matching string and link nodes with arrows
 def _build_merge_arrows(obj):
     _tmp = ''
     _line = obj.group()
