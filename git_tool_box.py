@@ -21,6 +21,7 @@ Dependencies (please install):
 import os
 import re
 import sys
+import signal
 import pexpect
 import fnmatch
 import subprocess
@@ -96,6 +97,7 @@ def GITBackup(srv = '', param = ''):
         _msg = _get_answer(prompt = 'Any comment? [empty comment is not allowed]')
     _msg = '"' + _msg + '"'
     _result = _invoke(['git commit -a -m %s' % _msg])
+
     #to allow local backup in one's home directory
     _ans = _get_answer(prompt = 'Backup the changes to a patch also? [y/N]',
                        help = "say y or Y if you like to make a patch file for the change")
@@ -204,7 +206,7 @@ def GITConfig(srv, param):
 
 def GITDiff(srv, param):
     """ gdi
-        gdi(r)(v)(f)(1/2): show the files' differences in many ways
+        gdi(r)(v)(f)(2/3): show the files' differences in many ways
                 with(r) to show the diff between the working copy and the remote
                    master
                 without (r) to show the diff between local versions/branches
@@ -221,7 +223,7 @@ def GITDiff(srv, param):
                    do 'gdivf <version1> <filename>'
                    to compare between the local copy and the local HEAD:
                    do 'gdif <filename>'
-                with (1/2/3) to diff with a difftool that is configured when you setup
+                with (2/3) to diff with a difftool that is configured when you setup
                    this tool. this is useful to switch between ascii tool like vimdiff
                    and gui tools like meld, beyondcompare
                    do a 'gdi' to use the default difftool
@@ -233,9 +235,9 @@ def GITDiff(srv, param):
     _isremote, _isversion, _isfile = ('r' in srv), ('v' in srv), ('f' in srv)
     _difftool = _file = _versions = _remote_branch = ''
     #look for the user preferred diff tool
-    if '1' in srv:
+    if '2' in srv:
         _difftool = _get_global('difftool.second')
-    elif '2' in srv:
+    elif '3' in srv:
         _difftool = _get_global('difftool.third')
     if not _difftool: #try to get the default diff tool in this case
         _difftool = _get_global('difftool.first')
@@ -269,8 +271,11 @@ def GITDiff(srv, param):
     _cmd = 'git difftool -y -t %(t)s %(v)s %(r)s %(f)s' %\
            {'t': _difftool, 'v': _versions, 'r': _remote_branch, 'f': _file}
     #if there are too many files, warn the user before doing diff
-    if _number_of_changed_files(_versions, _remote_branch, _file) > 7: # i guess 7 is a good limit
-        _ans = _get_answer(prompt = 'seems like there are too many to compare, continue?[y/N]')
+    _num = _number_of_changed_files(_versions, _remote_branch, _file)
+    if _num > 7: # i guess 7 is a good limit
+        _ans = _get_answer(prompt = 'are you sure to diff about '
+                                   + color['red'] + '%d' % _num + _end_
+                                   + ' files?[y/N]')
         if _ans != 'y' and _ans != 'Y':
             _exit()
     #for vim it appears we need to invoke it via os.system to make it work correctly
@@ -369,7 +374,7 @@ def GITInfo(srv, param):
         _num = 1
     if _if_graphic is True:
         if _num != 0:
-            _range = 'HEAD' + _num * '^' + '...HEAD' + ' --ancestry-path'
+            _range = 'HEAD' + _num * '^' + '..HEAD' + ' --ancestry-path'
         #_format = '"%h" [label="<f0> %h|{<f1> %an|<f2> %cd}"]\n"%h":f0 -> {%p}'
         _format = """"%h" [label=<<TABLE>
                                 <TR><TD ROWSPAN="2" PORT="f0" BGCOLOR="bisque">%h</TD>
@@ -384,7 +389,7 @@ def GITInfo(srv, param):
             _range = "-%(num_of_log)d --skip=%(num_to_skip)d" %\
                     {'num_of_log': abs(_since - _until) + 1,
                      'num_to_skip': min(_since, _until) - 1}
-        _format='___%nRev:       %h%nDate:     %cd%nComment:  %s' #TODO: add branch here
+        _format='___%nRev:       %h%nDate:     %cd%nComment:  %s'
     if _if_show_tag is True: #show the tag info
         print("this will take a while...")
         _cmd = _git_log(version = _range, format = '%ad|%h|%s|%d',
@@ -1292,8 +1297,8 @@ SERVICES = [ 'ggt',
              ['gbr' + x for x in allperm('rt')], #combination of 'r', 't'
              'gdi',
              [ 'gdi' + x for x in allperm('rvf')], # combination of 'r','v','f'
-             [ 'gdi' + x for x in allperm('1rvf')], # combination of 'r','v','f', '1'
              [ 'gdi' + x for x in allperm('2rvf')], # combination of 'r','v','f', '2'
+             [ 'gdi' + x for x in allperm('3rvf')], # combination of 'r','v','f', '3'
              'ghelp' ]
 
 CALL_TABLE = { 'gst': GITStatus,
