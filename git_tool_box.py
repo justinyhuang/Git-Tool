@@ -172,17 +172,23 @@ def GITConfig(srv, param):
     """ gcf
         show the configuration of the current repository and the global settings.
         it is also possible to modify the values interatively with this tool.
-        available items:
-            branch name
-            remote value
-            merge value
+        to set a config value, do:
+            gcf <local/global> <section> <value>
     """
-    _check_git_path()
+    if len(param) == 4: #set config value
+        if param[1] == 'local': #set local value
+            _set_local(section = param[2], value = param[3])
+        elif param[1] == 'global': #set global value
+            _set_global(section = param[2], value = param[3])
     #local settings
-    _current_branch = _get_current_branch()
-    _current_branch_remote = _get_local('branch.%s.remote' % _current_branch)
-    _current_branch_merge = _get_local('branch.%s.merge' % _current_branch)
-    _remote_branch = _get_remote_branch()
+    if _root_path():
+        _current_branch = _get_current_branch()
+        _current_branch_remote = _get_local('branch.%s.remote' % _current_branch)
+        _current_branch_merge = _get_local('branch.%s.merge' % _current_branch)
+        _remote_branch = _get_remote_branch()
+    else:
+        _current_branch = _current_branch_remote = \
+        _current_branch_merge = _remote_branch = None
     #global settings
     _email = _get_global('user.email')
     _username = _get_global('user.name')
@@ -191,17 +197,17 @@ def GITConfig(srv, param):
     _third_diff_tool = _get_global('difftool.third')
     #make up the output
     _ret = ""
+    _ret += "current branch is %s\n" % _current_branch
+    _ret += "remote branch is %s\n" % _remote_branch
     _ret += color['yellow'] + "---Local Settings---\n" + _end_
-    _ret += "current branch: %s\n" % _current_branch
-    _ret += "remote value: %s\n" % _current_branch_remote
-    _ret += "merge value: %s\n" % _current_branch_merge
-    _ret += "remote branch: %s\n" % _remote_branch
+    _ret += "branch.%s.remote: %s\n" % (_current_branch, _current_branch_remote)
+    _ret += "branch.%s.merge: %s\n" % (_current_branch, _current_branch_merge)
     _ret += color['yellow'] + "---Global Settings---\n" + _end_
-    _ret += "user name: %s\n" % _username
-    _ret += "user email: %s\n" % _email
-    _ret += "1st diff tool: %s\n" % _first_diff_tool
-    _ret += "2nd diff tool: %s\n" % _second_diff_tool
-    _ret += "3rd diff tool: %s\n" % _third_diff_tool
+    _ret += "user.name: %s\n" % _username
+    _ret += "user.email: %s\n" % _email
+    _ret += "difftool.first: %s\n" % _first_diff_tool
+    _ret += "difftool.second: %s\n" % _second_diff_tool
+    _ret += "difftool.third: %s\n" % _third_diff_tool
     return _ret
 
 def GITDiff(srv, param):
@@ -297,6 +303,7 @@ def GITGet(srv, param):
     """
     #1. check if only update the local is requested
     if _root_path() is not None:
+        _current_branch = _get_current_branch()
         if _num_uncommited_files() > 0:
             print("There are still files unstaged/uncommited." +
                   "Please use gbu to commit all your changes before" +
@@ -308,12 +315,15 @@ def GITGet(srv, param):
         if _ans != 'n' and _ans != 'N':
             _update_local_branch()
             return "done"
+        else: #current path has git data, if not update then we do git fetch from a ref
+            _source_type = 'ref'
+    else: #current path has no git data, do git clone from a repo
+        _source_type = 'repo'
     #2. get the source
-    _source_list = _get_source_list() #the list of known resources from the global config file
-    _color = color.values()
+    _source_list = _get_source_list(_source_type)
     for r, _index in zip(_source_list, range(len(_source_list))):
         print("%d  -  %s" % (_index, r))
-    _tmp = _get_answer(prompt = 'What source would you like to clone from',
+    _tmp = _get_answer(prompt = 'Pick a source from above',
                        help = 'select the source by the index number, if available.\n' +
                               'or type in the repository/branch')
     #TODO: check if the local config merge and remote values are correct
@@ -321,29 +331,30 @@ def GITGet(srv, param):
         _ifnew = False #seems like a know source is selected
         _source = _source_list[int(_tmp)]
     else:
-        _ifnew = True #new source specified by the user?
+        _ifnew = True #new source specified by the user
         _source = _tmp
     #3. fetch or clone the source
-    if re.match('^git@.*:.*', _source) is not None:
+    if _source_type == 'repo':
         #TODO:need to consider if the user like to update but accidentally comes here
-        _ifclone = True #this seems like a clone request
-        _cmd = _git_clone(_source)
-    else:
-        _ifclone = False #this could be a fetch request
+        _tmp = _invoke([_git_clone(_source)])
+    else: #a fetch request
         if _root_path() is None:
             return "Seem like you are trying to fetch a branch, but in no git reporitory" +\
                    "You might consider issue the command in a repository..."
-        _branch_name = _split(_source, '/')[-1]
-        #the local path is generated by replacing the 'refs/' at the front to 'refs/remotes/'
-        _local_repo = _source.replace('refs/', 'refs/remotes/', 1)
-        _cmd = _git_fetch(src = _source, dst = _local_repo)
-    _tmp = _invoke([_cmd])
-    if _ifclone is False:
-        #it is a fetch, make a local branch and switch to the new branch
-        _make_branch_link_to_local_repo(_branch_name, _local_repo[5:]) #skip the 'refs/'
+        #is there a branch tracking the local repo?
+        _branch_name = _source[ _source.rfind('/') + 1: ]
+        if _find_local_refs(_source): #the ref has been fetched to local repository
+            _tmp = _make_branch_linked_to_ref(_branch_name, _source)
+        else: #there is no branch currently tracking the ref
+            _local_ref = _source.replace('refs/', 'refs/remotes/', 1)
+            _repo = _get_local(section = 'branch.%s.remote' % _current_branch)
+            _cmd = _git_fetch(repo = _repo, src = _source, dst = _local_ref)
+            _tmp = _invoke([_cmd])
+            #make a branch tracking the ref
+            _tmp += _make_branch_linked_to_ref(_branch_name, _source)
     #4.update the global config file with the checked out source path
     if _ifnew is True:
-        _add_to_source_list(_source)
+        _add_to_source_list(_source_type, _source)
     return _tmp
 
 _dot_file = '/tmp/gittool.dotty.tmp'
@@ -374,7 +385,7 @@ def GITInfo(srv, param):
         _num = 1
     if _if_graphic is True:
         if _num != 0:
-            _range = 'HEAD' + _num * '^' + '..HEAD' + ' --ancestry-path'
+            _range = 'HEAD' + _num * '^' + '...HEAD' + ' --ancestry-path'
         #_format = '"%h" [label="<f0> %h|{<f1> %an|<f2> %cd}"]\n"%h":f0 -> {%p}'
         _format = """"%h" [label=<<TABLE>
                                 <TR><TD ROWSPAN="2" PORT="f0" BGCOLOR="bisque">%h</TD>
@@ -454,24 +465,7 @@ def GITPut(srv, param):
         [not implemented yet] Do 'gpt <branch-path>' to push the changes to a new branch.
     """
     _check_git_path()
-    _url = _get_remote_url()
-    if _url is None:
-        _ans = _get_answer(prompt = "would you like to manually type in the url? [y/N]",
-                           help = "the url of the remote repository has not yet been set.\n" +
-                                  "You have to tell where you'd like to push your changes, \n" +
-                                  "or exit to fix it in other means.")
-        if _ans == 'y' or _ans == 'Y':
-            #TODO: need to add function for adding a remote section
-            #_url = _get_answer(prompt = "url = ", help ='')
-            _exit_with_error('not implemented yet')
-        else:
-            _exit()
-    else:
-        _ans = _get_answer(prompt = "push to %s ?[Y/n]" % _url,
-                           help = "")
-        if _ans == 'n' or _ans == 'N':
-            _exit()
-    return _push_to_remote() #do a push with the given url
+    return _push_to_remote()
 
 #setup the environment for first use
 def GITSetup(param):
@@ -855,6 +849,15 @@ def _translate_status_code(cmd, ori):
                           ori)
 
 #-------------------branch helppers
+#to find if a ref has a local storage
+def _find_local_refs(ref):
+    ref = ref[5:] #skip the 'refs/'
+    _current_branch, _branch_list = _get_branch_list(isremote = True)
+    for b in _branch_list:
+        if ref == b:
+            return b
+    return None
+
 #merge branch, assuming frombr and tobr are valid branches
 def _merge_branch(frombr, tobr):
     _cur = _get_current_branch()
@@ -872,7 +875,7 @@ def _merge_branch(frombr, tobr):
 def _switch_branch(isremote = False):
     _curbranch, _branch_list = _get_branch_list(isremote)
     _listball = BranchBall(_branch_list)
-    _selected = _get_answer(prefix = '---Branch List ---',
+    _selected = _get_answer(prefix = '--- Branch List ---',
                             help = "You can: \
                                        \n   Enter branch index or,\
                                        \n   Type the name for a new one or,\
@@ -914,9 +917,21 @@ def _make_branch(branch):
     _result += 'config is set based on ' + color['red'] + _previous_branch + _end_
     return _result
 
-def _make_branch_link_to_local_repo(bname, path):
-    _cmd = _git_checkout(target = bname, track = path)
-    _invoke([_cmd])
+#based on the remote and fetch values of the parent, set up the values for the new branch
+def _make_branch_linked_to_ref(bname, ref, repo = ''):
+    _ref = ref[5:] #skip the 'refs/'
+    _remote = _get_local(section = 'branch.%s.remote' % _get_current_branch())
+    _repo = repo if repo\
+                 else _get_local(section = 'remote.%s.url' % _remote)
+    _cmd = _git_checkout(target = _ref, new_branch = bname)
+    _tmp = _invoke([_cmd])
+    _fetch = '+refs/' + _ref + ':refs/remotes/' + _ref
+    #set up a new remote section and a new branch section for this new branch
+    _set_local(section = 'remote.%s.url' % bname, value = _repo)
+    _set_local(section = 'remote.%s.fetch' % bname, value = _fetch)
+    _set_local(section = 'branch.%s.remote' % bname, value = bname)
+    _set_local(section = 'branch.%s.merge' % bname, value = 'refs/heads/' + bname)
+    return _tmp
 
 def _get_branches_with_commit(hash):
     _cmd = _git_branch(contains = hash)
@@ -1017,6 +1032,19 @@ def _get_remote_url():
 
 #based on git config, get the local path in the repository where remote branch is stored.
 def _get_remote_branch():
+    #get the name of the corresponding remote branch
+    _current_branch = _get_current_branch()
+    _local_head = _get_local(section = 'branch.%s.merge' % _current_branch)
+    _branch_name = _local_head[_local_head.rfind('/') + 1 :]
+    #get a list of remote branches
+    _current, _remote_branch_list = _get_branch_list(isremote = True)
+    #find a hit in the branches with the name
+    for b in _remote_branch_list:
+        if _branch_name == b[b.rfind('/') + 1 :]:
+            return b.split()[-1] #in case b is something like 'origin/HEAD -> origin/master'
+    return None
+
+def _get_remote_branch_old():
     #1. get the current branch
     _current_branch = _get_current_branch()
     #2. read the remote and merge value from the current branch section
@@ -1050,10 +1078,17 @@ def _get_remote_refspec(name):
     return _remote, _local
 
 def _push_to_remote():
-    remote = _get_local('branch.%s.remote' % _get_current_branch())
-    _cmd = _git_push(branch = _get_current_branch(), remote = remote)
-    #TODO: need to update the local config file (perhaps supporting multiple branches to push?)
-    #TODO: there is a bug when i try to push to github, fix it~
+    _url = _get_remote_url()
+    _remote_branch = 'refs/' + _get_remote_branch()
+    if _url is None:
+        _exit_with_error('config values are missing, you will need to manually fix this issue')
+    else:
+        _msg = 'push to ' + color['red'] + 'URL' + _end_ + ': ' + _url + '\n' +\
+               '        ' + color['red'] + 'REF' + _end_ + ': ' + _remote_branch + '\nOK? [Y/n]'
+        _ans = _get_answer(prompt = _msg)
+        if _ans == 'n' or _ans == 'N':
+            _exit()
+    _cmd = _git_push(repo = _url, branch = _get_current_branch(), ref = _remote_branch)
     return _invoke([_cmd])
 
 #command to get local git config value
@@ -1136,27 +1171,27 @@ def _check_git_path():
 
 #-------------------source helppers
 #get the source list length
-def _get_source_list_len():
-    _len = _get_global('sourcelist.length')
+def _get_source_list_len(source):
+    _len = _get_global('sourcelist.%s.length' % source)
     if _len is None:
         return 0
     return int(_len)
 
 #read the remembered source list
-def _get_source_list():
+def _get_source_list(source):
     _list = list()
-    for i in range(_get_source_list_len()):
-        _tmp = _get_global('sourcelist.item%d' %(i + 1))
+    for i in range(_get_source_list_len(source)):
+        _tmp = _get_global('sourcelist.%s.item%d' % (source, (i + 1)))
         if _tmp is None:
             raise ConfigItemMissing
         _list.append(_tmp)
     return _list
 
 #add a new source into the source list
-def _add_to_source_list(item):
-    _len = _get_source_list_len()
-    _set_global('sourcelist.item%d' % (_len + 1), item)
-    _set_global('sourcelist.length', str(_len + 1))
+def _add_to_source_list(type, item):
+    _len = _get_source_list_len(type)
+    _set_global('sourcelist.%s.item%d' % (type, (_len + 1)), item)
+    _set_global('sourcelist.%s.length' % type, str(_len + 1))
 
 def _delete_source(source):
     pass
@@ -1232,10 +1267,10 @@ def _git_patch(selection, patch_file = '/tmp/backup.patch'):
 def _git_clone(param):
     return 'git clone ' + param
 
-def _git_fetch(src = '', dst = ''):
+def _git_fetch(repo = '', src = '', dst = ''):
     _param = ('%(source)s:%(local)s' % {'source':src, 'local':dst})\
              if src and dst else ''
-    return 'git fetch origin %s' % _param
+    return 'git fetch %s %s' % (repo, _param)
 
 def _git_checkout(target = '', new_branch = '', track = ''):
     _param = target
@@ -1261,8 +1296,8 @@ def _git_branch(lsoption = None, del_branch = '', force_del_branch = '',
         return 'git branch --contains %s' % contains
     return 'git branch %s' % branch
 
-def _git_push(branch, remote):
-    return 'git push %s %s' % (remote, branch)
+def _git_push(repo, branch, ref):
+    return 'git push %s %s:%s' % (repo, branch, ref)
 
 def _git_rebase(param = ''):
     return 'git rebase %s' % param
@@ -1274,14 +1309,21 @@ def _git_showref(branch = ''):
     return 'git show-ref -s %s' % branch
 
 def _git_config(config = '', section = '', value = ''):
-    return 'git config --local %s %s' %(section, value) if config == 'local'\
-      else 'git config --global %s %s' %(section, value)
+    if value: #set function
+        return 'git config --local %s "%s"' %(section, value) if config == 'local'\
+          else 'git config --global %s "%s"' %(section, value)
+    else: #get function
+        return 'git config --local %s' % section if config == 'local'\
+          else 'git config --global %s' % section
 
 def _git_revparse(version = '', param = ''):
     return 'git rev-parse %s %s' % (version, param)
 
 def _git_reset(file):
     return 'git reset %s' % file
+
+def _git_remote(param):
+    return 'git remote %s' % param
 
 #a list of services provided to the user, via symbolic links
 SERVICES = [ 'ggt',
