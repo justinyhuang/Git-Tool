@@ -1051,7 +1051,7 @@ def _get_remote_refspec(name):
 
 def _push_to_remote():
     _url = _get_remote_url()
-    _remote_branch = 'refs/' + _get_remote_branch()
+    _remote_branch = _get_remote_branch()
     if _url is None:
         _exit_with_error('config values are missing, you will need to manually fix this issue')
     else:
