@@ -186,6 +186,7 @@ def GITConfig(srv, param):
         _current_branch_remote = _get_local('branch.%s.remote' % _current_branch)
         _current_branch_merge = _get_local('branch.%s.merge' % _current_branch)
         _remote_branch = _get_remote_branch()
+        _repo_url = _get_remote_url()
     else:
         _current_branch = _current_branch_remote = \
         _current_branch_merge = _remote_branch = None
@@ -199,6 +200,7 @@ def GITConfig(srv, param):
     _ret = ""
     _ret += "current branch is %s\n" % _current_branch
     _ret += "remote branch is %s\n" % _remote_branch
+    _ret += "remote repository url is %s\n" %  _repo_url
     _ret += color['yellow'] + "---Local Settings---\n" + _end_
     _ret += "branch.%s.remote: %s\n" % (_current_branch, _current_branch_remote)
     _ret += "branch.%s.merge: %s\n" % (_current_branch, _current_branch_merge)
@@ -1030,42 +1032,12 @@ def _get_remote_url():
     _url = _get_local('remote.%s.url' % _remote)
     return _url
 
-#based on git config, get the local path in the repository where remote branch is stored.
+#the remote branch is actually the merge value in the branch section
 def _get_remote_branch():
     #get the name of the corresponding remote branch
     _current_branch = _get_current_branch()
-    _local_head = _get_local(section = 'branch.%s.merge' % _current_branch)
-    _branch_name = _local_head[_local_head.rfind('/') + 1 :]
-    #get a list of remote branches
-    _current, _remote_branch_list = _get_branch_list(isremote = True)
-    #find a hit in the branches with the name
-    for b in _remote_branch_list:
-        if _branch_name == b[b.rfind('/') + 1 :]:
-            return b.split()[-1] #in case b is something like 'origin/HEAD -> origin/master'
-    return None
-
-def _get_remote_branch_old():
-    #1. get the current branch
-    _current_branch = _get_current_branch()
-    #2. read the remote and merge value from the current branch section
-    _remote = _get_local('branch.%s.remote' % _current_branch)
-    _merge = _get_local('branch.%s.merge' % _current_branch)
-    if _remote is None or _merge is None:
-        raise ConfigItemMissing
-    #3. check if the remote value references any remote section, e.g. origin
-    try:
-        _r_refspec, _l_refspec = _get_remote_refspec(_remote)
-    except ValueError:
-        #3.a this branch doesn't reference any remote section,
-        #in this case the merge value is the local path to the copy of remote branch
-        return _merge
-    #4. now that the _l_refspec contains most part of the path,
-    #get the remote branch name from the merge value
-    if _l_refspec.endswith('*'):
-        _path_to_remote = _l_refspec[:-1] + _split(_merge, '/')[-1]
-    else:
-        _path_to_remote = _l_refspec
-    return _path_to_remote
+    _remote_branch = _get_local(section = 'branch.%s.merge' % _current_branch)
+    return _remote_branch if _remote_branch else ''
 
 #get the remote refspec and the local refspec
 def _get_remote_refspec(name):
