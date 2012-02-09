@@ -930,7 +930,7 @@ def _make_branch_linked_to_ref(bname, ref, repo = ''):
     _set_local(section = 'remote.%s.url' % bname, value = _repo)
     _set_local(section = 'remote.%s.fetch' % bname, value = _fetch)
     _set_local(section = 'branch.%s.remote' % bname, value = bname)
-    _set_local(section = 'branch.%s.merge' % bname, value = 'refs/heads/' + bname)
+    _set_local(section = 'branch.%s.merge' % bname, value = ref)
     return _tmp
 
 def _get_branches_with_commit(hash):
