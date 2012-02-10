@@ -100,7 +100,8 @@ def GITSave(srv = '', param = ''):
     else: #do a push or a commit
         if _get_uncommited_changed_files(): #there are changed files to commit
             _ans=_get_answer(prompt = 'Back up in ' +\
-                             color['red'] + _current_branch + _end_ + ' ? [Y/n]')
+                             color['red'] + _current_branch + _end_ + ' ? [Y/n]',
+                             default = 'y')
             if _ans == 'n' or _ans == 'N':
                 _branch_list, _selected_branch = _select_branch()
                 _do_checkout_branch(_selected_branch, _branch_list)
@@ -188,7 +189,7 @@ def GITLoad(srv, param):
                 else: #the last possibility is...tag, try with fingers crossed...
                     _result = _do_checkout_from_commit(param[1])
             else: #no parameter is given. if i have to guess, i will try updating the repo
-                _ans = _get_answer(prompt = "Update the current repository? [Y/n]",
+                _ans = _get_answer(prompt = "Update the current repository? [Y/n]", default = 'y',
                                    help = "after the update, you can choose to either" +
                                           "merge or rebase your local changes")
                 if _ans != 'n' and _ans != 'N':
@@ -275,7 +276,7 @@ def GITDiff(srv, param):
     if _num > 7: # i guess 7 is a good limit
         _ans = _get_answer(prompt = 'are you sure to diff about '
                                    + color['red'] + '%d' % _num + _end_
-                                   + ' files?[y/N]')
+                                   + ' files?[y/N]', default = 'n')
         if _ans != 'y' and _ans != 'Y':
             _exit()
     #for vim it appears we need to invoke it via os.system to make it work correctly
@@ -422,16 +423,16 @@ def GITSetup(param):
         _invoke(['cp ~/.gitconfig ~/.gitconfig.gittool'])
         _invoke(['mv ~/.gitconfig.gittool.backup ~/.gitconfig'])
         _exit()
-    _ans = _get_answer(prompt = 'Would you like to setup GITTool? [y/N]',
-                    help = 'This will simply create a bunch of symbol links for you.\
-                          \nSo would you like to setup GITTool? [y/N]')
+    _ans = _get_answer(prompt = 'Would you like to setup GITTool? [y/N]', default = 'n',
+                       help = 'This will simply create a bunch of symbol links for you.' +
+                              '\nSo would you like to setup GITTool? [y/N]')
     if 'y' == _ans or 'Y' == _ans:
         _invoke(['cp ~/.gitconfig ~/.gitconfig.gittool.backup'])
         print("back up the original .gitconfig file")
         print("if your system supports colored text, you shall see them below:")
         for c in color.keys():
             print(color[c] + c + _end_)
-        _ans = _get_answer(prompt = 'do you see the colors?[Y/n]')
+        _ans = _get_answer(prompt = 'do you see the colors?[Y/n]', default = 'y')
         if _ans == 'n' or _ans == 'N':
             _set_global('GitTool.ColorSupport', 'no')
         else:
@@ -443,12 +444,12 @@ def GITSetup(param):
                            help = "it will be used as the default tool when diff")
         _set_global('difftool.first', _ans)
         _ans = _get_answer(prompt = "and your second choice of diff tool?",
-                           help = "it will be used as the secondary tool when diff.\
-                                 \nleave it blank if you don't have a secondary diff tool")
+                           help = "it will be used as the secondary tool when diff." +
+                                  "\nleave it blank if you don't have a secondary diff tool")
         _set_global('difftool.second', _ans)
         _ans = _get_answer(prompt = "and your third choice of diff tool?",
-                           help = "it will be used as the third tool when diff\
-                                 \nleave it blank if you don't have a secondary diff tool")
+                           help = "it will be used as the third tool when diff" +
+                                  "\nleave it blank if you don't have a secondary diff tool")
         _set_global('difftool.third', _ans)
         #set the graphic info tool settings
         #setup the symbolic links
@@ -456,13 +457,14 @@ def GITSetup(param):
         print("[eg. '~/bin/GTool', '/tools']")
         print("\nMake sure the path is in your PATH variable")
         _ans = _get_answer(help = "The GitUtilTool works based on" +
-                                 color['red'] + " A LOT OF " + _end_ + "small link files\n" +
-                                 "It's suggested to make a dedicated directory for the tool")
+                                  color['red'] + " A LOT OF " + _end_ + "small link files\n" +
+                                  "It's suggested to make a dedicated directory for the tool")
         _target_dir=os.path.expanduser(_ans)
         if not os.path.isdir(_target_dir):
             _ans=_get_answer(prompt = "The path doesn't seem to exist. Make the directory? [Y/n]",
-                            help = "I will try my best to create the directory/ies.\
-                                    \nWould you like me to do that for you?")
+                             default = 'y',
+                             help = "I will try my best to create the directory/ies." +
+                                    "\nWould you like me to do that for you?")
             if _ans == 'n' or _ans == 'N':
                 _exit()
             else:
@@ -704,7 +706,7 @@ def _invoke(cmd, detached = False):
         return ""
 
 #helper function to prompt users information and receive answers
-def _get_answer(prefix = '', prompt = '', postfix = '',
+def _get_answer(prefix = '', prompt = '', postfix = '', default = None,
                 help = 'No help available... ', ball = None, hl = -1):
     if 'No help available... ' != help or\
        (ball and ball.help): # show colored prompt if help is available
@@ -713,33 +715,31 @@ def _get_answer(prefix = '', prompt = '', postfix = '',
             help = ball.help
     else:
         _ps = PROMPT_SIGN
-    if ball: # when a ball is given, show the item list in the ball.
-        _prompt = (prefix + '\n' if prefix else '') +\
-                  '\n'.join(ball.get_indexed_list(highlight = hl)) + '\n' +\
-                  (postfix + '\n' if postfix else '') + prompt
-    else:
-        _prompt = prompt
-    _ans = raw_input(_prompt + _ps).strip(' ')
-    while _ans == '/h':
-        _ans = raw_input(help + _ps)
-    if '/e' == _ans:
-        _exit()
-    elif _ans.startswith('/d '):
-        if ball is None:
-            _exit_with_error("no ball is passed while a delete is required")
-        if re.search('^\/d\s+\d+([\s,-]+\d+)*\s*$', _ans): #space or ',' can be used as separator
-            #expand strings like '1-3' to '1 2 3' to further get all the indexes to delete
-            _tmp = re.sub('\d+[\s]*-[\s]*\d+', _expand_indexes_from_range, _ans[3:])
-            ball.delete([int(x.group()) for x in re.finditer('\d+', _tmp)]) #get all indexes
+    while True: #loop until we have an acceptable answer
+        if ball: # when a ball is given, show the item list in the ball.
+            _prompt = (prefix + '\n' if prefix else '') +\
+                      '\n'.join(ball.get_indexed_list(highlight = hl)) + '\n' +\
+                      (postfix + '\n' if postfix else '') + prompt
         else:
-            _exit_with_error("to delete an item, try '/d <index>'")
-        #show the prompt and item list after deletion
-        return _get_answer(prefix = prefix, prompt = prompt, postfix = postfix,
-                           help = help, ball = ball, hl = hl)
-    elif re.search('^\s*\d+\s*', _ans) and ball: #return the selected ball item
-        return ball[int(_ans)]
-    else:
-        return _ans
+            _prompt = prompt
+        _ans = raw_input(_prompt + _ps).strip(' ')
+        if _ans == '/h':
+            print(help)
+        elif '/e' == _ans:
+            _exit()
+        elif _ans.startswith('/d '):
+            if ball is None:
+                _exit_with_error("no ball is passed while a delete is required")
+            if re.search('^\/d\s+\d+([\s,-]+\d+)*\s*$', _ans): #space or ',' is used as separator
+                #expand strings like '1-3' to '1 2 3' to further get all the indexes to delete
+                _tmp = re.sub('\d+[\s]*-[\s]*\d+', _expand_indexes_from_range, _ans[3:])
+                ball.delete([int(x.group()) for x in re.finditer('\d+', _tmp)]) #get all indexes
+            else:
+                _exit_with_error("to delete an item, try '/d <index>'")
+        elif re.search('^\s*\d+\s*', _ans) and ball: #return the selected ball item
+            return ball[int(_ans)]
+        elif _ans or default: #this is a non-empty input, or default is set to allow direct Enter
+            return _ans if _ans else default
 
 #show a list of items with index and one of the item highlighted
 def _index_list(list, index_color = 'none', highlight = -1, hl_color = 'red'):
@@ -774,7 +774,7 @@ def _make_status_header(ver1, ver2):
            '[' + color['red'] + ver2 + _end_ + ']'
 
 def _merge_or_checkout():
-    _ans = _get_answer(prompt = "Merge or Checkout? [m/C]")
+    _ans = _get_answer(prompt = "Merge or Checkout? [m/C]", default = 'c')
     return 'm' if _ans == 'm' or _ans == 'M' else 'c'
 
 #print message with a fixed length bar
@@ -874,6 +874,7 @@ def _update_local_branch():
         _exit_with_error('There are item or section missing in the config file')
     #2. ask for option
     _ans = _get_answer(prompt = "fetch completes, shall we Merge or Rebase? (m/R)",
+                       default = 'r',
                        help = "Merge will keep the history of changes but mix the local " +\
                               "changes with the merged changes; while Rebase keeps all " +\
                               "local changes together but modifies the change history " +\
@@ -920,6 +921,7 @@ def _delete_branch(branch):
         return True, _tmp
     elif 'is not fully merged' in _tmp: #check if we should try with -D
         _ans = _get_answer(prompt = "%s is not fully merged. Delete it anyway? [y/N]" % branch,
+                           default = 'n',
                            help = "it is likely you have changes in the branch.\n" +
                                   "you can force deleting the branch, or quit.")
         if _ans == 'y' or _ans == 'Y':
@@ -1072,7 +1074,7 @@ def _push_to_remote():
     else:
         _msg = 'push to ' + color['red'] + 'URL' + _end_ + ': ' + _url + '\n' +\
                '        ' + color['red'] + 'REF' + _end_ + ': ' + _ref + '\nOK? [Y/n]'
-        _ans = _get_answer(prompt = _msg)
+        _ans = _get_answer(prompt = _msg, default = 'y')
         if _ans == 'n' or _ans == 'N':
             #choose or specify a URL
             _urls = _get_source_list('repo')
@@ -1125,7 +1127,7 @@ def _get_version_change(with_previous_version = False):
     _version_str = _base_version + '..' + _current_version
     _file_list = _invoke([git.diff(selection = _version_str, name_only = True)]) #list all changed files
     print(_file_list)
-    _tmp = _get_answer(prompt = 'Are the files that you changed? [y/N]', help = '')
+    _tmp = _get_answer(prompt = 'Are the files that you changed? [y/N]', default = 'n')
     if _tmp is 'N' or _tmp is 'n':
         return None, None
     else:
