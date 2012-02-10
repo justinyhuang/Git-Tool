@@ -4,10 +4,10 @@ Git-Tool - a utility set for easier use of git
 
 Available services:
    gsv: Git SaVe, to 'save' your changes
-   gld: Git LoaD, to 'load' new data into current working sandbox
+   gld: Git LoaD, to 'load' new data as/into current working copy
+   gdi: Git DIff, compare file/s between commits/branches
    gif: Git InFo, shows basic information of the current version
    gst: Git STatus, list modified/added/removed files between versions/branches
-   gdi: Git DIff, compare file/s between versions/branches
    ghelp: help info for GITUtil
 Proposed services:
    ???gfl: Git File, to fetch a file from a version
@@ -33,7 +33,7 @@ TODO: add the path of git-tool bin directory to PATH and the path of git-tool py
 
 #-------------------GLOBAL SETTINGS-------------------
 # Edit the following settings to make GITTool fits your need
-DEBUG = False
+DEBUG = True
 COLOR = True
 PROMPT_SIGN = ':> ' # unichr(0x263B) will show a smiling face.
 
@@ -102,8 +102,8 @@ def GITSave(srv = '', param = ''):
             _ans=_get_answer(prompt = 'Back up in ' +\
                              color['red'] + _current_branch + _end_ + ' ? [Y/n]')
             if _ans == 'n' or _ans == 'N':
-                if _switch_branch() == '': #user decides to quit without commiting
-                    _exit()
+                _branch_list, _selected_branch = _select_branch()
+                _do_checkout_branch(_selected_branch, _branch_list)
             _msg = ''
             while _msg is '':
                 _msg = _get_answer(prompt = 'Any comment? [empty comment is not allowed]')
@@ -152,23 +152,19 @@ def GITLoad(srv, param):
         _result = _do_clone()
     else: #in a git path
         _curbranch = _get_current_branch()
+        """
         if _num_uncommited_files() > 0:
-            print("There are still files unstaged/uncommited." +
+            print("There are still files unstaged/uncommited.\n" +
                   "Please use gsv to commit all your changes before" +
                   "further 'load' activities")
             _exit()
+        """
         if _ifbranch: #this is a branch thing
-            _curbranch, _list = _get_branch_list(_ifremote)
-            _ball = BranchBall(_list, 'branch')
-            _ans = _get_answer(prefix = "--- Branch List ---", ball = _ball, hl = _curbranch)
-            if _ifremote: #fetch a remote branch
-                _result = _do_fetch(_ans)
-                #TODO: can we support merging from a remote branch?
-            else: #checkout/merge a local branch
-                if _merge_or_checkout() == 'c':#checkout
-                    _result = _invoke([git.checkout(_ans)])
-                else: #merge
-                    _result = _do_merge(_ans)
+            _branch_list, _selected_branch = _select_branch(_ifremote)
+            if _ifremote or _merge_or_checkout() == 'c':# fetch from remote, or checkout locally
+                _result = _do_checkout_branch(_selected_branch, _branch_list, _ifremote)
+            else: #merge
+                _result = _do_merge(_ans)
         elif _ifhash: #checkout a hash to a new branch
             _hash = _select_version()
             if _merge_or_checkout() == 'c': #checkout
@@ -183,7 +179,7 @@ def GITLoad(srv, param):
                     _result = _do_apply(param[1])
                 elif param[1] in _get_branch_list()[1]: #this is a local branch
                     if _merge_or_checkout() == 'c': #checkout
-                        _result = _invoke([git.checkout(param[1])])
+                        _result = _do_checkout_branch(param[1])
                     else: #merge
                         _result = _do_merge(param[1])
                 elif _is_remote_branch(param[1]):#this is a remote branch
@@ -202,52 +198,14 @@ def GITLoad(srv, param):
                     _exit_with_error("Please tell me more. You know I don't know what you know :(")
     return _result
 
-def GITConfig(srv, param):
-    """ gcf
-        show the configuration of the current repository and the global settings.
-        it is also possible to modify the values interatively with this tool.
-        to set a config value, do:
-            gcf <local/global> <section> <value>
-    """
-    if len(param) == 4: #set config value
-        if param[1] == 'local': #set local value
-            _set_local(section = param[2], value = param[3])
-        elif param[1] == 'global': #set global value
-            _set_global(section = param[2], value = param[3])
-    #local settings
-    if _root_path():
-        _current_branch = _get_current_branch()
-        _current_branch_remote = _get_local('branch.%s.remote' % _current_branch)
-        _current_branch_merge = _get_local('branch.%s.merge' % _current_branch)
-        _remote_branch = _get_remote_branch()
-        _repo_url = _get_remote_url()
-    else:
-        _current_branch = _current_branch_remote = \
-        _current_branch_merge = _remote_branch = None
-    #global settings
-    _email = _get_global('user.email')
-    _username = _get_global('user.name')
-    _first_diff_tool = _get_global('difftool.first')
-    _second_diff_tool = _get_global('difftool.second')
-    _third_diff_tool = _get_global('difftool.third')
-    #make up the output
-    _ret = ""
-    _ret += "current branch is %s\n" % _current_branch
-    _ret += "remote branch is %s\n" % _remote_branch
-    _ret += "remote repository url is %s\n" %  _repo_url
-    _ret += color['yellow'] + "---Local Settings---\n" + _end_
-    _ret += "branch.%s.remote: %s\n" % (_current_branch, _current_branch_remote)
-    _ret += "branch.%s.merge: %s\n" % (_current_branch, _current_branch_merge)
-    _ret += color['yellow'] + "---Global Settings---\n" + _end_
-    _ret += "user.name: %s\n" % _username
-    _ret += "user.email: %s\n" % _email
-    _ret += "difftool.first: %s\n" % _first_diff_tool
-    _ret += "difftool.second: %s\n" % _second_diff_tool
-    _ret += "difftool.third: %s\n" % _third_diff_tool
-    return _ret
-
 def GITDiff(srv, param):
     """ gdi
+        To show differences of file/s between:
+            * working copy and the latest commit.
+              'gdi' without parameter will show the file difference.
+            * local copy and the linked/tracked remote one.
+              'gdir' without parameter will show the file difference.
+            * two hashes.
         gdi(r)(v)(f)(2/3): show the files' differences in many ways
                 with(r) to show the diff between the working copy and the remote
                    master
@@ -327,6 +285,50 @@ def GITDiff(srv, param):
         print(_cmd)
         _tmp = _invoke([_cmd])
     return ''
+
+def GITConfig(srv, param):
+    """ gcf
+        show the configuration of the current repository and the global settings.
+        it is also possible to modify the values interatively with this tool.
+        to set a config value, do:
+            gcf <local/global> <section> <value>
+    """
+    if len(param) == 4: #set config value
+        if param[1] == 'local': #set local value
+            _set_local(section = param[2], value = param[3])
+        elif param[1] == 'global': #set global value
+            _set_global(section = param[2], value = param[3])
+    #local settings
+    if _root_path():
+        _current_branch = _get_current_branch()
+        _current_branch_remote = _get_local('branch.%s.remote' % _current_branch)
+        _current_branch_merge = _get_local('branch.%s.merge' % _current_branch)
+        _remote_branch = _get_remote_branch()
+        _repo_url = _get_remote_url()
+    else:
+        _current_branch = _current_branch_remote = \
+        _current_branch_merge = _remote_branch = None
+    #global settings
+    _email = _get_global('user.email')
+    _username = _get_global('user.name')
+    _first_diff_tool = _get_global('difftool.first')
+    _second_diff_tool = _get_global('difftool.second')
+    _third_diff_tool = _get_global('difftool.third')
+    #make up the output
+    _ret = ""
+    _ret += "current branch is %s\n" % _current_branch
+    _ret += "remote branch is %s\n" % _remote_branch
+    _ret += "remote repository url is %s\n" %  _repo_url
+    _ret += color['yellow'] + "---Local Settings---\n" + _end_
+    _ret += "branch.%s.remote: %s\n" % (_current_branch, _current_branch_remote)
+    _ret += "branch.%s.merge: %s\n" % (_current_branch, _current_branch_merge)
+    _ret += color['yellow'] + "---Global Settings---\n" + _end_
+    _ret += "user.name: %s\n" % _username
+    _ret += "user.email: %s\n" % _email
+    _ret += "difftool.first: %s\n" % _first_diff_tool
+    _ret += "difftool.second: %s\n" % _second_diff_tool
+    _ret += "difftool.third: %s\n" % _third_diff_tool
+    return _ret
 
 _dot_file = '/tmp/gittool.dotty.tmp'
 _svg_file = '/tmp/gittool.dotty.svg'
@@ -688,7 +690,6 @@ def _split(str, sep = None):
 def _invoke(cmd, detached = False):
     if DEBUG == True: #for debug only
         print(color['yellow'] + ''.join(cmd) + _end_)
-        return
     if detached is False:
         execution=subprocess.Popen(cmd,
                                    shell=True, stdin=subprocess.PIPE,
@@ -825,35 +826,12 @@ def _find_local_refs(ref):
             return b
     return None
 
-#show a lost of local/remote branches and do something
-def _switch_branch(isremote = False):
+#select a branch from list
+def _select_branch(isremote = False):
     _curbranch, _branch_list = _get_branch_list(isremote)
     _listball = BranchBall(_branch_list)
-    _selected = _get_answer(prefix = '--- Branch List ---', ball = _listball, hl = _curbranch)
-    if _selected == '':
-        return "" #return if no branch is selected or created
-    elif re.search('^\d+$', _selected): #a selected index
-        _selected_branch = _listball[int(_selected)]
-    else: # probably a new branch name
-        _selected_branch = _selected
-    _tmp = ''
-    for line in _branch_list:
-        if line != '' and _selected_branch == _split(line)[-1]:
-            if isremote is True:
-                _local_branch = _get_answer(prompt = "Give a name for the new local branch:",
-                                            help = "if give no name you will be on " +
-                                                   color['red'] + "NO " + _end_ +
-                                                   "branch and we don't recommend that")
-                if '' == _local_branch:
-                    return ''
-                else:
-                    _tmp = _invoke([git.checkout(target = _selected_branch,
-                                                  new_branch = _local_branch)])
-            else:
-                _tmp = _invoke([git.checkout(target = _selected_branch)])
-            return _tmp
-    #we are here because the selected branch is not in the list
-    return _make_branch(_selected_branch)
+    _ans = _get_answer(prefix = '--- Branch List ---', ball = _listball, hl = _curbranch)
+    return _branch_list, _ans
 
 def _make_branch(branch):
     _previous_branch = _get_current_branch()
@@ -1046,6 +1024,16 @@ def _do_merge(from_ref, to_ref = None):
     if 'Automatic merge failed' in _tmp: #need manual merge
         os.system(git.mergetool())
         _tmp = 'Done'
+    return _tmp
+
+#checkout a branch, or make a new branch and then check it out
+def _do_checkout_branch(selected_branch, branch_list = None, isremote = False):
+    if isremote: #to 'checkout' a remote branch is to fetch and make the branch local
+        _do_fetch(selected_branch)
+    if branch_list is None or selected_branch in branch_list: #this is an existing branch
+        _tmp = _invoke([git.checkout(target = selected_branch)])
+    else: #selected branch is not in the list
+        _tmp = _make_branch(selected_branch)
     return _tmp
 
 def _do_checkout_from_commit(ref):
