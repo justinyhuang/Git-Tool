@@ -3,14 +3,14 @@
 Git-Tool - a utility set for easier use of git
 
 Available services:
+   gsv: Git SaVe, to 'save' your changes
+   gld: Git LoaD, to 'load' new data into current working sandbox
    gif: Git InFo, shows basic information of the current version
    gst: Git STatus, list modified/added/removed files between versions/branches
-   gbr: Git Switch, switch/create to a branch/tag, remotely or locally
    gdi: Git DIff, compare file/s between versions/branches
-   ggt: Git GeT, to get a copy of the target repository
    ghelp: help info for GITUtil
 Proposed services:
-   gfl: Git File, to fetch a file from a version
+   ???gfl: Git File, to fetch a file from a version
 Dependencies (please install):
    git: Git-Tool is a wrapper of git
    graphviz and qiv: Git-Tool needs both to show graphical version tree via gifg
@@ -80,6 +80,8 @@ def GITSave(srv = '', param = ''):
               the patch file with the given name.
               With 'gsv <filename>' gsv will allow the user to pick two versions and
               generate the patch file based on user's selection.
+
+        Do 'gsv ?' to show this help message.
     """
     _current_branch = _get_current_branch()
     if len(param) > 1: #user ask for generating a patch
@@ -111,51 +113,94 @@ def GITSave(srv = '', param = ''):
         else: # there is no changed files, try a push
             return _push_to_remote()
 
-def GITBranch(srv, param):
-    """ gbr
-        Git BRanch, to perform list/switch to/create/delete on git branches
-        gbr(rt): Without argument 'gbr' shows a list of local branches:
-                    To switch to a branch, pick the branch by index.
-                    To create a branch, type the branch name.
-                    To delete a branch, do '/d <branch_index>'
-                    To quit, do '/e' or return directly.
-                 A 'gbr <branch_name>' will
-                    switch to the branch if the branch exists, or
-                    make and switch to the branch if it doesn't exist
-                 with (r) to do similar operations but on remote branches.
-                    Currently support operations are:
-                        switch to a remote branch
-                 with (t), 'gbrt <tag_name>' will switch to a branch has the tag on
+def GITLoad(srv, param):
+    """ gld
+        To 'load' new data into/as your current copy. A 'load' could be:
+            * a git clone - load a repository to local path
+              When issued in a git path, with no parameter given
+              'gld' will perform a git clone.
+
+            * a git fetch/pull/rebase - load new changes from remote repo to local
+                                        after that one can choose to do a merge/rebase
+              When issued in a git path, with no parameter given
+              'gld' will perform a git fetch (update the local repo),
+              and allow to merge, rebase, or quit after fetch.
+
+            * a git apply - load changes from a patch file
+              When 'gld <patch_name>' in a git path
+              'gld' will perform a git apply to take the patch into current working copy
+
+            * a git checkout/merge - load data from a branch, or by a hash/tag
+              When 'gld <ref_name>' in a git path, where a ref could be a branch/hash/tag
+              'gld' will perform a git checkout or merge
+
+        When not sure about the branch/hash/tag, use:
+            * gldb - to pick a branch from a list and do a checkout or merge.
+            * gldr - to fetch/merge a remote branch picked from list
+            * gldh - to pick a hash (a.k.a commit/version) from a list and do a checkout or merge
+            * gldt - to pick a tag from list and do a checkout or merge [NOT IMPLEMENTED]
+
+        Do 'gld ?' to show this help message.
     """
-    _check_git_path()
-    _hastag, _isremote = ('t' in srv), ('r' in srv)
-    _num_args = len(param)
-    _hasbranch = (_num_args == 2 and not _hastag)
-    _bname = _tname = ''
-    if _hasbranch is _hastag is False: #user doesn't give any arguments
-        return _switch_branch(_isremote) #select a branch a list of local/remote branches
-    else: #user gives either a branch name, or a tag
-        if _num_args is not 2:
-            _exit_with_error("missing parameters...")
-        _name = param[1]
-        _cmd = git.checkout()
-        if _hasbranch is True: #checkout a branch with the given branch name
-            _tmp, _branch_list = _get_branch_list()
-            if _name in _branch_list: #switch to an existing branch
-                _cmd += _name
-            else: #branch doesn't exist, make it
-                return _make_branch(_name)
-        if _hastag is True: #checkout a branch with the given tag
-            _branchname = _get_answer(prompt = 'branch name to keep the remote branch data: ',
-                                      help = 'To get a remote branch, \n\
-                                              it is required to create a local branch first')
-            _tname = param[1]
-            if _branchname.strip() == '':
-                _exit_with_error("A branch name is required, the 'nobranch' is not recommended")
-            else: #check out a new branch to hold the remote data with the given tag
-                _cmd += '%(tag)s -b %(newbranch)s' %\
-                        {'tag': _tname, 'newbranch': _branchname}
-        return _invoke([_cmd])
+    _ifremote = 'r' in srv
+    _ifbranch = 'b' in srv or _ifremote #when 'r' is given, 'b' automatically becomes True
+    _ifhash = 'h' in srv
+    _iftag = 't' in srv
+    if not _root_path(): #in a non-git path, do a clone (nothing else we could do, right?)
+        if _ifbranch or _ifremote or _ifhash or _iftag:
+            _exit_with_error("You need to run the command in a git repo")
+        _result = _do_clone()
+    else: #in a git path
+        _curbranch = _get_current_branch()
+        if _num_uncommited_files() > 0:
+            print("There are still files unstaged/uncommited." +
+                  "Please use gsv to commit all your changes before" +
+                  "further 'load' activities")
+            _exit()
+        if _ifbranch: #this is a branch thing
+            _curbranch, _list = _get_branch_list(_ifremote)
+            _ball = BranchBall(_list, 'branch')
+            _ans = _get_answer(prefix = "--- Branch List ---", ball = _ball, hl = _curbranch)
+            if _ifremote: #fetch a remote branch
+                _result = _do_fetch(_ans)
+                #TODO: can we support merging from a remote branch?
+            else: #checkout/merge a local branch
+                if _merge_or_checkout() == 'c':#checkout
+                    _result = _invoke([git.checkout(_ans)])
+                else: #merge
+                    _result = _do_merge(_ans)
+        elif _ifhash: #checkout a hash to a new branch
+            _hash = _select_version()
+            if _merge_or_checkout() == 'c': #checkout
+                _do_checkout_from_commit(_hash)
+            else: #merge
+                _result = _do_merge(_hash)
+        elif _iftag: #checkout a tag to a new branch
+            _exit_with_error("This feature is not yet supported")
+        else: # no specific direction is given, we might just guess
+            if len(param) == 2: #something is provided as the parameter
+                if os.path.isfile(param[1]): #this is a patch file
+                    _result = _do_apply(param[1])
+                elif param[1] in _get_branch_list()[1]: #this is a local branch
+                    if _merge_or_checkout() == 'c': #checkout
+                        _result = _invoke([git.checkout(param[1])])
+                    else: #merge
+                        _result = _do_merge(param[1])
+                elif _is_remote_branch(param[1]):#this is a remote branch
+                    _result = _do_fetch(param[1])
+                    #TODO: can we support merging from a remote branch?
+                else: #the last possibility is...tag, try with fingers crossed...
+                    _result = _do_checkout_from_commit(param[1])
+            else: #no parameter is given. if i have to guess, i will try updating the repo
+                _ans = _get_answer(prompt = "Update the current repository? [Y/n]",
+                                   help = "after the update, you can choose to either" +
+                                          "merge or rebase your local changes")
+                if _ans != 'n' and _ans != 'N':
+                    _update_local_branch()
+                    return "done"
+                else:
+                    _exit_with_error("Please tell me more. You know I don't know what you know :(")
+    return _result
 
 def GITConfig(srv, param):
     """ gcf
@@ -283,71 +328,6 @@ def GITDiff(srv, param):
         _tmp = _invoke([_cmd])
     return ''
 
-def GITGet(srv, param):
-    """ ggt
-        get a latest copy of the specified repository/branch
-        the 'get' could be a 'git clone', or a 'git fetch' followed by
-        a 'git merge' or a 'git rebase'
-        once a new source is checked out, the tool will remember the path.
-        next time when checking out from the same source, the user can pick
-        the source from a list
-    """
-    #1. check if only update the local is requested
-    if _root_path() is not None:
-        _current_branch = _get_current_branch()
-        if _num_uncommited_files() > 0:
-            print("There are still files unstaged/uncommited." +
-                  "Please use gbu to commit all your changes before" +
-                  "updating this repository")
-            _exit()
-        _ans = _get_answer(prompt = "Update the current branch? [Y/n]",
-                           help = "'n' or 'N' will lead you to a 'git clone', " +
-                                  "with any other input will update the local branch")
-        if _ans != 'n' and _ans != 'N':
-            _update_local_branch()
-            return "done"
-        else: #current path has git data, if not update then we do git fetch from a ref
-            _source_type = 'ref'
-    else: #current path has no git data, do git clone from a repo
-        _source_type = 'repo'
-    #2. get the source
-    _source_list = _get_source_list(_source_type)
-    for r, _index in zip(_source_list, range(len(_source_list))):
-        print("%d  -  %s" % (_index, r))
-    _tmp = _get_answer(prompt = 'Pick a source from above',
-                       help = 'select the source by the index number, if available.\n' +
-                              'or type in the repository/branch')
-    #TODO: check if the local config merge and remote values are correct
-    if re.match('^\d+$', _tmp) is not None:
-        _ifnew = False #seems like a know source is selected
-        _source = _source_list[int(_tmp)]
-    else:
-        _ifnew = True #new source specified by the user
-        _source = _tmp
-    #3. fetch or clone the source
-    if _source_type == 'repo':
-        #TODO:need to consider if the user like to update but accidentally comes here
-        _tmp = _invoke([git.clone(_source)])
-    else: #a fetch request
-        if _root_path() is None:
-            return "Seem like you are trying to fetch a branch, but in no git reporitory" +\
-                   "You might consider issue the command in a repository..."
-        #is there a branch tracking the local repo?
-        _branch_name = _source[ _source.rfind('/') + 1: ]
-        if _find_local_refs(_source): #the ref has been fetched to local repository
-            _tmp = _make_branch_linked_to_ref(_branch_name, _source)
-        else: #there is no branch currently tracking the ref
-            _local_ref = _source.replace('refs/', 'refs/remotes/', 1)
-            _repo = _get_local(section = 'branch.%s.remote' % _current_branch)
-            _cmd = git.fetch(repo = _repo, src = _source, dst = _local_ref)
-            _tmp = _invoke([_cmd])
-            #make a branch tracking the ref
-            _tmp += _make_branch_linked_to_ref(_branch_name, _source)
-    #4.update the global config file with the checked out source path
-    if _ifnew is True:
-        _add_to_source_list(_source_type, _source)
-    return _tmp
-
 _dot_file = '/tmp/gittool.dotty.tmp'
 _svg_file = '/tmp/gittool.dotty.svg'
 def GITInfo(srv, param):
@@ -430,24 +410,6 @@ def GITInfo(srv, param):
         _cmd = ['qiv', _svg_file]
         return _invoke(_cmd, detached=True) #feed the data to dotty
     return _result
-
-def GITMerge(srv, param):
-    """ gmg
-        Git MerGe changes in a branch to another.
-    """
-    _check_git_path()
-    #get local/remote branch list
-    _cur_branch_index, _branch_list = _get_branch_list(False)
-    _branch_list += _get_branch_list(True)[1]
-    _ball = BranchBall(_branch_list)
-    #ask for the 'from' branch
-    _from = _get_answer(prompt = 'Select the branch to merge ' + color['red'] + 'from' + _end_,
-                        hl = _cur_branch_index, ball = _ball)
-    #ask for the 'to' branch
-    _to = _get_answer(prompt = 'Select the branch to merge ' + color['red'] + 'to' + _end_,
-                      hl = _cur_branch_index, ball = _ball)
-    #do the merge
-    return _merge_branch(_branch_list[int(_from)], _branch_list[int(_to)])
 
 #setup the environment for first use
 def GITSetup(param):
@@ -669,6 +631,15 @@ class BranchBall(Ball):
     def delete(self, item_list):
         super(BranchBall, self).delete(item_list, _delete_branch)
 
+class HashBall(Ball):
+    """
+    A ball that holds a list of hash
+    """
+    def __init(self, list):
+        super(FileBall, 'hash', self).__init__(list)
+    def delete(self, item_list):
+        _exit_with_error("Deleting a hash is not allowed")
+
 class FileBall(Ball):
     """
     A ball that holds a list of branches
@@ -801,6 +772,10 @@ def _make_status_header(ver1, ver2):
     return '[' + color['red'] + ver1 + _end_ + ']' + ' v.s ' +\
            '[' + color['red'] + ver2 + _end_ + ']'
 
+def _merge_or_checkout():
+    _ans = _get_answer(prompt = "Merge or Checkout? [m/C]")
+    return 'm' if _ans == 'm' or _ans == 'M' else 'c'
+
 #print message with a fixed length bar
 def _make_msg_bar(msg):
     _colorless_msg = msg
@@ -849,16 +824,6 @@ def _find_local_refs(ref):
         if ref == b:
             return b
     return None
-
-#merge branch, assuming frombr and tobr are valid branches
-def _merge_branch(frombr, tobr):
-    _cur = _get_current_branch()
-    _invoke([git.checkout(target = tobr)]) #switch to the target branch
-    _tmp = _invoke([git.merge(frombr)]) #try auto merge
-    if 'Automatic merge failed' in _tmp: #need manual merge
-        os.system(git.mergetool())
-        _tmp = 'Done'
-    return _tmp
 
 #show a lost of local/remote branches and do something
 def _switch_branch(isremote = False):
@@ -938,11 +903,9 @@ def _update_local_branch():
                               "strategy you would like to use, carefully.")
     _remote_branch = _get_remote_branch()
     if _ans == 'm' or _ans == 'M': #3a. merge
-        print("merging from %s ..." % _merge)
-        return _invoke([git.merge(_remote_branch)])
+        return _do_remote(_remote_branch)
     else: #3b. rebase, which is recommended in many cases
-        print("rebasing from %s ..." % _merge)
-        return _invoke([git.rebase()])
+        return _do_rebase(_remote_branch)
     #TODO: there is yet another option, see the better (and more complicated) rebase at
     # http://softwareswirl.blogspot.com/2009/04/truce-in-merge-vs-rebase-war.html
 
@@ -964,6 +927,10 @@ def _get_branch_list(isremote = False):
 def _get_current_branch():
     _first_line = _split(_invoke([git.status()]), '\n')[0]
     return _split(_first_line)[-1] #last word of the first line is the branch name
+
+def _is_remote_branch(b):
+    _url = _get_remote_url()
+    return _invoke([git.lsremote(_url, b)])
 
 #delete a branch
 def _delete_branch(branch):
@@ -1040,6 +1007,75 @@ def _get_remote_refspec(name):
     _remote = _remote.strip('+')
     return _remote, _local
 
+#command to get local git config value
+def _get_local(section):
+    _tmp = _invoke([git.config(config = 'local', section = section)])
+    return None if _tmp is None else _tmp[:-1]
+
+def _set_local(section, value):
+    _tmp = _invoke([git.config(config = 'local', section = section, value = value)])
+
+#command to get global git config value
+def _get_global(section):
+    _tmp = _invoke([git.config(config = 'global', section = section)])
+    return None if _tmp is None else _tmp[:-1]
+
+#command to set global git config value
+def _set_global(section, value):
+    _tmp = _invoke([git.config(config = 'global', section = section, value = value)])
+
+#-------------------functional blocks
+def _do_rebase(from_ref):
+    print("rebasing from %s ..." % from_ref)
+    return _invoke([git.rebase()])
+
+#merge branch, assuming frombr and tobr are valid branches
+def _do_merge(from_ref, to_ref = None):
+    #first check if the from ref is on the same branch of to_ref
+    _refs = _invoke([git.branch(contains = from_ref)]).split('\n')
+    for r in _refs:
+        if from_ref in r.strip(' *'):
+            if to_ref:
+                _exit_with_error("I cannot merge %s to %s" % (from_ref, to_ref))
+            else:
+                _exit_with_error("I cannot merge %s to current branch" % from_ref)
+    print("merging from %s ..." % from_ref)
+    if to_ref:#we need to first switch to the to ref
+        _invoke([git.checkout(target = to_ref)]) #switch to the target branch
+    _tmp = _invoke([git.merge(from_ref)]) #try auto merge
+    if 'Automatic merge failed' in _tmp: #need manual merge
+        os.system(git.mergetool())
+        _tmp = 'Done'
+    return _tmp
+
+def _do_checkout_from_commit(ref):
+    _new_branch = ''
+    while not _new_branch: #force to input a name
+        _new_branch = _get_answer(prompt = "Give a name to the new branch")
+    return _invoke([git.checkout(target = ref, new_branch = _new_branch)])
+
+def _do_apply(file):
+    _tmp = _invoke([git.apply(file, check = True)])
+    for line in _tmp.split('\n'):
+        if 'does not apply' in line:
+            _exit_with_error("Loading the patch failed. Check the patch file")
+    return _invoke([git.apply(file)])
+
+def _do_fetch(ref):
+    _bname = ref[ ref.rfind('/') + 1: ] #get the branch name
+    _local_ref = ref.replace('refs/', 'refs/remotes/', 1)
+    _url = _get_local(section = 'branch.%s.remote' % _get_current_branch()) #assume the same url
+    _result = _invoke([git.fetch(url = _url, src = ref, dst = _local_ref)])
+    #make a branch tracking the ref, forcing the branch name to be the same as the remote
+    _result += _make_branch_linked_to_ref(_bname, ref)
+    return _result
+
+def _do_clone():
+    _source_list = _get_source_list('repo')
+    _ball = SourceBall(_source_list, 'repo')
+    _url = _get_answer(prompt = 'Pick a source to clone from', ball = _ball)
+    return  _invoke([git.clone(_url)])
+
 def _push_to_remote():
     _url = _get_remote_url()
     _ref = _get_remote_branch()
@@ -1066,23 +1102,6 @@ def _push_to_remote():
             _set_remote_branch(_ref)
     _cmd = git.push(repo = _url, branch = _get_current_branch(), ref = _ref)
     return _invoke([_cmd])
-
-#command to get local git config value
-def _get_local(section):
-    _tmp = _invoke([git.config(config = 'local', section = section)])
-    return None if _tmp is None else _tmp[:-1]
-
-def _set_local(section, value):
-    _tmp = _invoke([git.config(config = 'local', section = section, value = value)])
-
-#command to get global git config value
-def _get_global(section):
-    _tmp = _invoke([git.config(config = 'global', section = section)])
-    return None if _tmp is None else _tmp[:-1]
-
-#command to set global git config value
-def _set_global(section, value):
-    _tmp = _invoke([git.config(config = 'global', section = section, value = value)])
 
 #-------------------version helppers
 #prompt the user a list of versions and ask for a selected version
@@ -1223,16 +1242,13 @@ def _remove_link_file(x):
     _invoke(['rm %s' % (_dir + x)])
 
 #a list of services provided to the user, via symbolic links
-SERVICES = [ 'ggt',
+SERVICES = [ 'gsv',
+             'gld', 'gldr', 'gldb', 'gldh', 'gldt',
              'gst',
-             'gcf',
              ['gst' + x for x in allperm('dr')], #combination of 'd', 'r'
              ['gst' + x for x in allperm('br')], #combination of 'b', 'r'
+             'gcf',
              'gif', 'gift', 'gifg',
-             'gsv',
-             'gmg',
-             'gbr',
-             ['gbr' + x for x in allperm('rt')], #combination of 'r', 't'
              'gdi',
              [ 'gdi' + x for x in allperm('rvf')], # combination of 'r','v','f'
              [ 'gdi' + x for x in allperm('2rvf')], # combination of 'r','v','f', '2'
@@ -1240,13 +1256,11 @@ SERVICES = [ 'ggt',
              'ghelp' ]
 
 CALL_TABLE = { 'gst': GITStatus,
-               'gbr': GITBranch,
                'gif': GITInfo,
                'gsv': GITSave,
+               'gld': GITLoad,
                'gdi': GITDiff,
-               'gmg': GITMerge,
-               'gcf': GITConfig,
-               'ggt': GITGet}
+               'gcf': GITConfig}
 
 if __name__ == '__main__':
     """

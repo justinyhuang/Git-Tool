@@ -16,10 +16,10 @@ def patch(selection, patch_file):
 def clone(param):
     return 'git clone ' + param
 
-def fetch(repo = '', src = '', dst = ''):
+def fetch(url = '', src = '', dst = ''):
     _param = ('%(source)s:%(local)s' % {'source':src, 'local':dst})\
              if src and dst else ''
-    return 'git fetch %s %s' % (repo, _param)
+    return 'git fetch %s %s' % (url, _param)
 
 def checkout(target = '', new_branch = '', track = ''):
     _param = target
@@ -76,3 +76,9 @@ def remote(param):
 
 def commit(param):
     return 'git commit %s' % param
+
+def lsremote(url, branch):
+    return 'git ls-remote %s %s' % (url, branch)
+
+def apply(patch_file, check = False):
+    return 'git apply %s %s' % ('--check' if check else '', patch_file)
