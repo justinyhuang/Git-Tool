@@ -8,7 +8,7 @@ def log(version = '', num = 0, format = '', param = ''):
            'format': ("--format='%s'" % format) if format else '',
            'other': param if param else ''}
 
-def patch(selection, patch_file = '/tmp/backup.patch'):
+def patch(selection, patch_file):
     _param = selection
     _param += (' > %s' % patch_file) if patch_file else ''
     return 'git format-patch -k --stdout %s' % _param
@@ -73,3 +73,6 @@ def reset(file):
 
 def remote(param):
     return 'git remote %s' % param
+
+def commit(param):
+    return 'git commit %s' % param

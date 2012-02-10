@@ -3,8 +3,6 @@
 Git-Tool - a utility set for easier use of git
 
 Available services:
-   gbu: Git BackUp, commit changes in the working copy to local repository
-   gpt: Git PuT, to put the local changes to the remote repository
    gif: Git InFo, shows basic information of the current version
    gst: Git STatus, list modified/added/removed files between versions/branches
    gbr: Git Switch, switch/create to a branch/tag, remotely or locally
@@ -13,7 +11,6 @@ Available services:
    ghelp: help info for GITUtil
 Proposed services:
    gfl: Git File, to fetch a file from a version
-   gpa: Git PAtch
 Dependencies (please install):
    git: Git-Tool is a wrapper of git
    graphviz and qiv: Git-Tool needs both to show graphical version tree via gifg
@@ -67,59 +64,52 @@ else:
 #All the service functions are linked directly to corresponding git-tool services.
 #No git command will be invoked in these functions.
 
-def GITBackup(srv = '', param = ''):
-    """ gbu
-        commit/backup the changes to the local repository
-             Changes can be back-up to the current branch, or another branch you
-             select from the given list
-             you can also generate a patch of your changes to store the patch
-             somewhere else.
+def GITSave(srv = '', param = ''):
+    """ gsv
+        To 'save' your changes. A 'save' could be:
+            * a git commit - save to local repository
+              When no parameter is given and there are changed files to commit,
+              gsv will perform a git commit.
+
+            * a git push - save to remote repository
+              When no parameter is given and there is no changed files to commit,
+              gsv will perform a git push.
+
+            * a git format-patch - save to a patch file
+              With 'gsv <hash1>..<hash2> <filename>' gsv will generate a patch into
+              the patch file with the given name.
+              With 'gsv <filename>' gsv will allow the user to pick two versions and
+              generate the patch file based on user's selection.
     """
     _current_branch = _get_current_branch()
-    if _current_branch == 'master':
-        _ans=_get_answer(prompt = 'Are you sure to back up in ' +\
-                                color['red'] + 'master ' + _end_ + 'branch? [y/N]',
-                         help = 'In most cases what you need is to back up to\
-                                 your own branch in order to merge or further\
-                                 branch out later. So are you sure?')
-        if _ans is not 'y' and _ans is not 'Y':
-            if _switch_branch() == '':
-                _exit()
-    else: #this is a branch other than master
-        _ans = _get_answer(prompt = 'back up in ' +
-                           color['red'] + _current_branch + _end_ + '? [Y/n]')
-        if _ans == 'n' or _ans == 'N':
-            if _switch_branch() == '':
-                _exit()
-    _msg = ''
-    while _msg is '':
-        _msg = _get_answer(prompt = 'Any comment? [empty comment is not allowed]')
-    _msg = '"' + _msg + '"'
-    _result = _invoke(['git commit -a -m %s' % _msg])
-
-    #to allow local backup in one's home directory
-    _ans = _get_answer(prompt = 'Backup the changes to a patch also? [y/N]',
-                       help = "say y or Y if you like to make a patch file for the change")
-    if _ans == 'y' or _ans == 'Y':
-        _file_list, _version_str = _get_version_change(with_previous_version = True)
-        if _file_list is None or _version_str is None:
-            _exit();
-        _tmp = _invoke([git.patch(selection = _version_str)])
-        _ans = _get_answer(prompt = 'where to store the patch file?')
+    if len(param) > 1: #user ask for generating a patch
+        if len(param) == 3: #both hash string and the file name is given
+            _version_str, _patch_file = param[1], param[2]
+        else: #only file name is given, help him to pick two hashes
+            _patch_file = param[1]
+            _file_list, _version_str = _get_version_change()
+        _tmp = _invoke([git.patch(selection = _version_str, patch_file = _patch_file)])
+        _ans = _get_answer(prompt = 'where to store %s ?' % _patch_file)
         _target_dir=os.path.expanduser(_ans)
-        if not os.path.isdir(_target_dir):
-            _ans=_get_answer(prompt = "The path doesn't exist. Try to make the directory? [Y/n]",
-                            help = '')
+        if not os.path.isdir(_target_dir):#directory doesn't exist, try to make one
+            os.makedirs(_target_dir)
+        _invoke(['mv %s %s' % (_patch_file, _target_dir)])
+        return '\npatch saved to %s/%s' % (_target_dir, _patch_file)
+    else: #do a push or a commit
+        if _get_uncommited_changed_files(): #there are changed files to commit
+            _ans=_get_answer(prompt = 'Back up in ' +\
+                             color['red'] + _current_branch + _end_ + ' ? [Y/n]')
             if _ans == 'n' or _ans == 'N':
-                _exit()
-            else:
-                os.makedirs(_target_dir)
-        _invoke(['mv /tmp/backup.patch %(target)s/backup.%(verstr)s.patch ' %\
-                 {'target': _target_dir, 'verstr': _version_str}])
-        return _result + '\nbackup saved as %(target)s/backup.%(verstr)s.patch ' %\
-               {'target': _target_dir, 'verstr': _version_str}
-    else:
-        return _result
+                if _switch_branch() == '': #user decides to quit without commiting
+                    _exit()
+            _msg = ''
+            while _msg is '':
+                _msg = _get_answer(prompt = 'Any comment? [empty comment is not allowed]')
+            _msg = '"' + _msg + '"'
+            _invoke([git.commit(' -a -m %s' % _msg)])
+            return "Done"
+        else: # there is no changed files, try a push
+            return _push_to_remote()
 
 def GITBranch(srv, param):
     """ gbr
@@ -459,15 +449,6 @@ def GITMerge(srv, param):
     #do the merge
     return _merge_branch(_branch_list[int(_from)], _branch_list[int(_to)])
 
-def GITPut(srv, param):
-    """ gpt
-        Git PuT the local changes to a remote repository
-        A 'gpt' will try to push the changes to a previously used branch.
-        [not implemented yet] Do 'gpt <branch-path>' to push the changes to a new branch.
-    """
-    _check_git_path()
-    return _push_to_remote()
-
 #setup the environment for first use
 def GITSetup(param):
     if len(param) == 2 and param[1] == 'clean':
@@ -630,7 +611,7 @@ def GITStatus(srv, param):
                 _exit_with_error('unknown version/branch, please check')
             else:#assume this is comparison between versions
                 _comp2, _comp1 = _compare_str, _get_versions(1)[0]
-            _changed_not_commited_sign = 'MODIFIED ' if _get_changed_uncommited_file_list()\
+            _changed_not_commited_sign = 'MODIFIED ' if _get_uncommited_changed_files()\
                                               else ''
             _comp1 = _changed_not_commited_sign + _comp1
         if _status is None or _status.strip(' ') is None:
@@ -657,9 +638,14 @@ class Ball(object):
     A ball is a carrier that holds the output of a git-tool helper function
     the carrier is able to perform certain operations on the data it holds.
     """
-    def __init__(self, list, **param):
+    def __init__(self, list, name = 'item'):
         self._list = list     #all the data will be stored in a list
-        self._param = param   #for any future extended functionalities
+        self.name = name
+        self.help = "You can: \
+          \n   Type the index of the %s or,\
+          \n   Type the name for a new %s or,\
+          \n   Use '/d <item_index>' to delete an %s or,\
+          \n   Use '/e' to quit" % (self.name, self.name, self.name)
     def __getitem__(self, k):
         return self._list[k]
     def get_list(self):
@@ -678,8 +664,8 @@ class BranchBall(Ball):
     """
     A ball that holds a list of branches
     """
-    def __init(self, list, **param):
-        super(BranchBall, self).__init__(list)
+    def __init(self, list):
+        super(BranchBall, 'branch', self).__init__(list)
     def delete(self, item_list):
         super(BranchBall, self).delete(item_list, _delete_branch)
 
@@ -687,8 +673,8 @@ class FileBall(Ball):
     """
     A ball that holds a list of branches
     """
-    def __init(self, list, **param):
-        super(FileBall, self).__init__(list)
+    def __init(self, list):
+        super(FileBall, 'file', self).__init__(list)
     def delete(self, item_list):
         super(FileBall, self).delete(item_list, _revert_file_item)
 
@@ -696,8 +682,8 @@ class SourceBall(Ball):
     """
     A ball that holds a list of sources
     """
-    def __init(self, list, **param):
-        super(FileBall, self).__init__(list)
+    def __init(self, list, name = 'source'):
+        super(FileBall, self.name, self).__init__(list)
     def delete(self, item_list):
         for x in item_list:
             if _delete_source(self._list[x]) is True: #user might choose not to delete
@@ -748,8 +734,11 @@ def _invoke(cmd, detached = False):
 #helper function to prompt users information and receive answers
 def _get_answer(prefix = '', prompt = '', postfix = '',
                 help = 'No help available... ', ball = None, hl = -1):
-    if 'No help available... ' != help: # show prompt in a different color if help is available
+    if 'No help available... ' != help or\
+       (ball and ball.help): # show colored prompt if help is available
         _ps = color['lightblue'] + PROMPT_SIGN + _end_
+        if ball and ball.help:
+            help = ball.help
     else:
         _ps = PROMPT_SIGN
     if ball: # when a ball is given, show the item list in the ball.
@@ -775,6 +764,8 @@ def _get_answer(prefix = '', prompt = '', postfix = '',
         #show the prompt and item list after deletion
         return _get_answer(prefix = prefix, prompt = prompt, postfix = postfix,
                            help = help, ball = ball, hl = hl)
+    elif re.search('^\s*\d+\s*', _ans) and ball: #return the selected ball item
+        return ball[int(_ans)]
     else:
         return _ans
 
@@ -867,23 +858,13 @@ def _merge_branch(frombr, tobr):
     if 'Automatic merge failed' in _tmp: #need manual merge
         os.system(git.mergetool())
         _tmp = 'Done'
-    _ans = _get_answer(prompt = 'merge complete. back up the merge now?[y/N]')
-    if _ans == 'y' or _ans == 'Y':
-        GITBackup()
     return _tmp
 
 #show a lost of local/remote branches and do something
 def _switch_branch(isremote = False):
     _curbranch, _branch_list = _get_branch_list(isremote)
     _listball = BranchBall(_branch_list)
-    _selected = _get_answer(prefix = '--- Branch List ---',
-                            help = "You can: \
-                                       \n   Enter branch index or,\
-                                       \n   Type the name for a new one or,\
-                                       \n   Use '/d <branch_name>' to delete a branch\
-                                       \n   Press Enter to quit",
-                                    ball = _listball,
-                                    hl = _curbranch)
+    _selected = _get_answer(prefix = '--- Branch List ---', ball = _listball, hl = _curbranch)
     if _selected == '':
         return "" #return if no branch is selected or created
     elif re.search('^\d+$', _selected): #a selected index
@@ -1031,12 +1012,23 @@ def _get_remote_url():
     _url = _get_local('remote.%s.url' % _remote)
     return _url
 
-#the remote branch is actually the merge value in the branch section
+#set the url of the corresponding remote repository
+def _set_remote_url(url):
+    _remote = _get_local('branch.%s.remote' % _get_current_branch())
+    if _remote is None:
+        raise ConfigItemMissing
+    _set_local('remote.%s.url' % _remote, url)
+
+#get the remote branch, the merge value in the branch section
 def _get_remote_branch():
     #get the name of the corresponding remote branch
     _current_branch = _get_current_branch()
     _remote_branch = _get_local(section = 'branch.%s.merge' % _current_branch)
     return _remote_branch if _remote_branch else ''
+
+#set the remote branch, the merge value in the branch section
+def _set_remote_branch(branch):
+    _set_local('branch.%s.remote' % _get_current_branch(), branch)
 
 #get the remote refspec and the local refspec
 def _get_remote_refspec(name):
@@ -1050,16 +1042,29 @@ def _get_remote_refspec(name):
 
 def _push_to_remote():
     _url = _get_remote_url()
-    _remote_branch = _get_remote_branch()
+    _ref = _get_remote_branch()
     if _url is None:
         _exit_with_error('config values are missing, you will need to manually fix this issue')
     else:
         _msg = 'push to ' + color['red'] + 'URL' + _end_ + ': ' + _url + '\n' +\
-               '        ' + color['red'] + 'REF' + _end_ + ': ' + _remote_branch + '\nOK? [Y/n]'
+               '        ' + color['red'] + 'REF' + _end_ + ': ' + _ref + '\nOK? [Y/n]'
         _ans = _get_answer(prompt = _msg)
         if _ans == 'n' or _ans == 'N':
-            _exit()
-    _cmd = git.push(repo = _url, branch = _get_current_branch(), ref = _remote_branch)
+            #choose or specify a URL
+            _urls = _get_source_list('repo')
+            _ball = SourceBall(_urls, 'repo')
+            _url = _get_answer(prompt = 'Select a URL to push', ball = _ball)
+            if _url not in _urls: #user type in a new item that is not in the ball list
+                _add_to_source_list('repo', _url)
+            _set_remote_url(_url)
+            #choose or specify a REF
+            _refs = _get_source_list('ref')
+            _ball = SourceBall(_refs, 'ref')
+            _ref = _get_answer(prompt = 'Select a REF to push', ball = _ball)
+            if _ref not in _refs: #user type in a new item that is not in the ball list
+                _add_to_source_list('ref', _ref)
+            _set_remote_branch(_ref)
+    _cmd = git.push(repo = _url, branch = _get_current_branch(), ref = _ref)
     return _invoke([_cmd])
 
 #command to get local git config value
@@ -1169,7 +1174,7 @@ def _delete_source(source):
 
 #-------------------file helppers
 #get changed but not yet commited files
-def _get_changed_uncommited_file_list():
+def _get_uncommited_changed_files():
     return _invoke([git.diff(name_only = True)])
 
 def _number_of_changed_files(_versions = '', _remote_branch = '', _file = ''):
@@ -1219,13 +1224,12 @@ def _remove_link_file(x):
 
 #a list of services provided to the user, via symbolic links
 SERVICES = [ 'ggt',
-             'gpt',
              'gst',
              'gcf',
              ['gst' + x for x in allperm('dr')], #combination of 'd', 'r'
              ['gst' + x for x in allperm('br')], #combination of 'b', 'r'
              'gif', 'gift', 'gifg',
-             'gbu',
+             'gsv',
              'gmg',
              'gbr',
              ['gbr' + x for x in allperm('rt')], #combination of 'r', 't'
@@ -1238,12 +1242,11 @@ SERVICES = [ 'ggt',
 CALL_TABLE = { 'gst': GITStatus,
                'gbr': GITBranch,
                'gif': GITInfo,
-               'gbu': GITBackup,
+               'gsv': GITSave,
                'gdi': GITDiff,
                'gmg': GITMerge,
                'gcf': GITConfig,
-               'ggt': GITGet,
-               'gpt': GITPut }
+               'ggt': GITGet}
 
 if __name__ == '__main__':
     """
