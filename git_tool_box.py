@@ -6,14 +6,14 @@ Available services:
    gsv: Git SaVe, to 'save' your changes
    gld: Git LoaD, to 'load' new data as/into current working copy
    gdi: Git DIff, compare file/s between commits/branches
-   gif: Git InFo, shows basic information of the current version
-   gst: Git STatus, list modified/added/removed files between versions/branches
+   gif: Git InFo, shows basic information of the current hash
+   gst: Git STatus, list modified/added/removed files between hashes/branches
    ghelp: help info for GITUtil
 Proposed services:
-   ???gfl: Git File, to fetch a file from a version
+   ???gfl: Git File, to fetch a file from a hash
 Dependencies (please install):
    git: Git-Tool is a wrapper of git
-   graphviz and qiv: Git-Tool needs both to show graphical version tree via gifg
+   graphviz and qiv: Git-Tool needs both to show graphical hash tree via gifg
 """
 import os
 import re
@@ -78,7 +78,7 @@ def GITSave(srv = '', param = ''):
             * a git format-patch - save to a patch file
               With 'gsv <hash1>..<hash2> <filename>' gsv will generate a patch into
               the patch file with the given name.
-              With 'gsv <filename>' gsv will allow the user to pick two versions and
+              With 'gsv <filename>' gsv will allow the user to pick two hashes and
               generate the patch file based on user's selection.
 
         Do 'gsv ?' to show this help message.
@@ -86,11 +86,11 @@ def GITSave(srv = '', param = ''):
     _current_branch = _get_current_branch()
     if len(param) > 1: #user ask for generating a patch
         if len(param) == 3: #both hash string and the file name is given
-            _version_str, _patch_file = param[1], param[2]
+            _hash_str, _patch_file = param[1], param[2]
         else: #only file name is given, help him to pick two hashes
             _patch_file = param[1]
-            _file_list, _version_str = _get_version_change()
-        _tmp = _invoke([git.patch(selection = _version_str, patch_file = _patch_file)])
+            _file_list, _hash_str = _get_hash_change()
+        _tmp = _invoke([git.patch(selection = _hash_str, patch_file = _patch_file)])
         _ans = _get_answer(prompt = 'where to store %s ?' % _patch_file)
         _target_dir=os.path.expanduser(_ans)
         if not os.path.isdir(_target_dir):#directory doesn't exist, try to make one
@@ -105,9 +105,7 @@ def GITSave(srv = '', param = ''):
             if _ans == 'n' or _ans == 'N':
                 _branch_list, _selected_branch = _select_branch()
                 _do_checkout_branch(_selected_branch, _branch_list)
-            _msg = ''
-            while _msg is '':
-                _msg = _get_answer(prompt = 'Any comment? [empty comment is not allowed]')
+            _msg = _get_answer(prompt = 'Any comment? [empty comment is not allowed]')
             _msg = '"' + _msg + '"'
             _invoke([git.commit(' -a -m %s' % _msg)])
             return "Done"
@@ -138,7 +136,7 @@ def GITLoad(srv, param):
         When not sure about the branch/hash/tag, use:
             * gldb - to pick a branch from a list and do a checkout or merge.
             * gldr - to fetch/merge a remote branch picked from list
-            * gldh - to pick a hash (a.k.a commit/version) from a list and do a checkout or merge
+            * gldh - to pick a hash (a.k.a commit/hash) from a list and do a checkout or merge
             * gldt - to pick a tag from list and do a checkout or merge [NOT IMPLEMENTED]
 
         Do 'gld ?' to show this help message.
@@ -167,7 +165,7 @@ def GITLoad(srv, param):
             else: #merge
                 _result = _do_merge(_ans)
         elif _ifhash: #checkout a hash to a new branch
-            _hash = _select_version()
+            _hash = _select_hash()
             if _merge_or_checkout() == 'c': #checkout
                 _do_checkout_from_commit(_hash)
             else: #merge
@@ -203,38 +201,23 @@ def GITDiff(srv, param):
     """ gdi
         To show differences of file/s between:
             * working copy and the latest commit.
-              'gdi' without parameter will show the file difference.
+              'gdi' without parameter shows the file difference.
             * local copy and the linked/tracked remote one.
-              'gdir' without parameter will show the file difference.
+              'gdir' without parameter shows the file difference.
             * two hashes.
-        gdi(r)(v)(f)(2/3): show the files' differences in many ways
-                with(r) to show the diff between the working copy and the remote
-                   master
-                without (r) to show the diff between local versions/branches
-                   branch HEAD(configurable)
-                with (v) to show the diff between local versions/branches
-                   do 'gdiv <version1>..<version2>' to compare between two versions
-                   do 'gdiv <version>' to compare between the working copy with
-                   'version'
-                   do 'gdiv ?' to pick a version from the version list and compare
-                   with the local copy.
-                   NOTE: comparing can only be between local versions
-                with (f) to compare the difference of a file between two versions
-                   combined with 'v', do 'gdivf <version1>..<version2> <filename>' or
-                   do 'gdivf <version1> <filename>'
-                   to compare between the local copy and the local HEAD:
-                   do 'gdif <filename>'
-                with (2/3) to diff with a difftool that is configured when you setup
-                   this tool. this is useful to switch between ascii tool like vimdiff
-                   and gui tools like meld, beyondcompare
-                   do a 'gdi' to use the default difftool
-                   do a 'gdi1' to use the secondary difftool
-                   do a 'gdi2' to use another difftool
+              'gdi <hash1>..<hash2>' shows file difference between hash1 and hash2.
+              'gdi <hash>' shows file difference between working copy and hash.
+              'gdih' without parameter allows to select two hashes to compare.
 
+        'gdi' allows doing diff with different tools:
+            * 'gdi' and its relatives will do diff with the default primary diff tool.
+            * 'gdi2'/'gdi3' and its relatives will do diff with the secondary/third diff tool.
+
+        'gdi <filename>' with or without other options shows only the difference in the given file.
     """
     _check_git_path()
-    _isremote, _isversion, _isfile = ('r' in srv), ('v' in srv), ('f' in srv)
-    _difftool = _file = _versions = _remote_branch = ''
+    _isremote, _ishash = ('r' in srv), ('h' in srv)
+    _difftool = _file = _hashes = _remote_branch = ''
     #look for the user preferred diff tool
     if '2' in srv:
         _difftool = _get_global('difftool.second')
@@ -242,37 +225,29 @@ def GITDiff(srv, param):
         _difftool = _get_global('difftool.third')
     if not _difftool: #try to get the default diff tool in this case
         _difftool = _get_global('difftool.first')
-    if _isversion: #look for the version string
-        for x in param[1:]:
+    if _isremote: #handle remote diff operation
+        _remote_branch = _get_remote_branch()
+    else: #handle non-remote diff
+        for x in param[1:]: #looking for any hash info
             if re.search('^[0-9a-fA-F]+\.\.[0-9a-fA-F]+$', x) is not None:
-                _versions = x #this seems like a <ver>..<ver> string
+                _hashes = x #this seems like a <hash>..<hash> string
                 break
-            if re.search('^[0-9a-fA-F]+$', x) is not None:
-                if _if_ver_exist(x) is True: #this seems like a <ver> string
-                    _curversion = _get_versions(1)[0]
-                    _versions = _curversion + '..' + x #make up the version string
+            if re.search('^[0-9a-fA-F]+$', x):
+                if _if_hash_exist(x): #this seems like a <hash> string
+                    _curhash = _get_hashes(1)[0]
+                    _hashes = _curhash + '..' + x #make up the hash string
                     break
                 else:
-                    continue #cannot find the version, keep checking the rest params
-        if _versions is None: #cannot find a valid version string
-            _exit_with_error("cannot identify two versions to compare\n")
-    if _isfile: #look for a given file
-        for x in param[1:]:
-            if os.path.isfile(x) is True:
-                _file = x
-                break
-        if _file is None: #cannot find a valid file name in the param
-            _exit_with_error("cannot identify a valid file name\n")
-    if _isremote == False: #handle local diff operation.
-        if _isversion == True: # version diff is only supported locally
-            if '?' == _versions: #allow user to select versions on the fly
-                _versions = _select_version()
-    else: #handle remote diff operation
-        _remote_branch = _get_remote_branch()
-    _cmd = 'git difftool -y -t %(t)s %(v)s %(r)s %(f)s' %\
-           {'t': _difftool, 'v': _versions, 'r': _remote_branch, 'f': _file}
+                    continue #cannot find the hash, keep checking the rest params
+        if _ishash and not _hashes: #allow user to select hashes on the fly
+            _hashes = _select_hash_range()
+    for x in param[1:]:
+        if os.path.isfile(x): #the file exist
+            _file = x
+            break
+    _cmd = git.difftool(_difftool, _hashes, _remote_branch, _file)
     #if there are too many files, warn the user before doing diff
-    _num = _number_of_changed_files(_versions, _remote_branch, _file)
+    _num = _number_of_changed_files(_hashes, _remote_branch, _file)
     if _num > 7: # i guess 7 is a good limit
         _ans = _get_answer(prompt = 'are you sure to diff about '
                                    + color['red'] + '%d' % _num + _end_
@@ -283,7 +258,6 @@ def GITDiff(srv, param):
     if _difftool == 'vimdiff':
         os.system(_cmd)
     else:
-        print(_cmd)
         _tmp = _invoke([_cmd])
     return ''
 
@@ -335,27 +309,27 @@ _dot_file = '/tmp/gittool.dotty.tmp'
 _svg_file = '/tmp/gittool.dotty.svg'
 def GITInfo(srv, param):
     """gif
-       to display the version/branch/tag info
-       gif(tg): gif <n> shows n latest versions' info
-                    when no parameter is given, only the current version info will be shown
-                gif <since version> <until version>
-                    display all the versions between the since_version and the until_version
-                    e.g 'gif 3 0' shows the versions from HEAD to the 3rd parent of HEAD
-                        'gif 7 4' shows the versions from the 4th parent to the 7th parent of HEAD
-                    * the tool is smart enough even you put the two versions in the other order =)
+       to display the hash/branch/tag info
+       gif(tg): gif <n> shows n latest hashes' info
+                    when no parameter is given, only the current hash info will be shown
+                gif <since hash> <until hash>
+                    display all the hashes between the since_hash and the until_hash
+                    e.g 'gif 3 0' shows the hashes from HEAD to the 3rd parent of HEAD
+                        'gif 7 4' shows the hashes from the 4th parent to the 7th parent of HEAD
+                    * the tool is smart enough even you put the two hashes in the other order =)
                 with (t) you will get the tag info if there is any.
                     * fetching tag info would take a bit more time
-                with (g) you will get graphic version tree expression based on a dot file.
+                with (g) you will get graphic hash tree expression based on a dot file.
                     *NOTE*: graphviz and qiv is required to enable the 'g' option
     """
     _check_git_path()
     _if_graphic, _if_show_tag = ('g' in srv), ('t' in srv)
     _since = _until = _num = 0
-    if len(param) == 3: #start and end of a version segment is given.
+    if len(param) == 3: #start and end of a hash segment is given.
         _since, _until  = int(param[1]), int(param[2])
-    elif len(param) == 2: #the number of versions is given.
+    elif len(param) == 2: #the number of hashes is given.
         _num = int(param[1])
-    else: #default, show the latest version info
+    else: #default, show the latest hash info
         _num = 1
     if _if_graphic is True:
         if _num != 0:
@@ -377,7 +351,7 @@ def GITInfo(srv, param):
         _format='___%nRev:       %h%nDate:     %cd%nComment:  %s'
     if _if_show_tag is True: #show the tag info
         print("this will take a while...")
-        _cmd = git.log(version = _range, format = '%ad|%h|%s|%d',
+        _cmd = git.log(hash = _range, format = '%ad|%h|%s|%d',
                         param = '--abbrev-commit --date=short')
         _logs = _split(_invoke([_cmd]), '\n')
         _result = ''
@@ -388,21 +362,21 @@ def GITInfo(srv, param):
             _container_tags = _invoke(["git tag --contains %s" % _hash])
             _container_tags = _split(_container_tags, '\n')
             if _container_tags:
-                #the hash has tags attached, get the tags on this specific version
+                #the hash has tags attached, get the tags on this specific hash
                 _tags = list(set(_tmp) & set(_container_tags))
                 _result += '___\n'
                 _result += 'Rev: %s\nDate: %s\nBranch: %s\nComment: %s\nTags: %s\n' %\
                            (_hash, _date, _branch, _comment, _tags)
-            else: #a version without any tag
+            else: #a hash without any tag
                 _result += '___\n'
                 _result += 'Rev: %s\nDate: %s\nBranch: %s\nComment: %s\n' %\
                            (_hash, _date, _branch, _comment)
         return _result
     else:
-        _result = _invoke([git.log(version = _range, format = _format,
-                                    param = '--date=short')])
+        _result = _invoke([git.log(hash = _range, format = _format,
+                                   param = '--date=short')])
     if _if_graphic is True:
-        #link versions with arrows
+        #link hashes with arrows
         _result = re.sub('"[a-f0-9]{7}":f0 -> \{[ a-f0-9]+\}', _build_merge_arrows, _result)
         _result = 'digraph G{\nnode [shape=plaintext]\n'\
                 + _result\
@@ -461,45 +435,37 @@ def GITSetup(param):
                                   "It's suggested to make a dedicated directory for the tool")
         _target_dir=os.path.expanduser(_ans)
         if not os.path.isdir(_target_dir):
-            _ans=_get_answer(prompt = "The path doesn't seem to exist. Make the directory? [Y/n]",
-                             default = 'y',
-                             help = "I will try my best to create the directory/ies." +
-                                    "\nWould you like me to do that for you?")
-            if _ans == 'n' or _ans == 'N':
-                _exit()
-            else:
-                os.makedirs(_target_dir)
+            os.makedirs(_target_dir)
         _source_path = os.path.dirname(__file__)
         for service in SERVICES:
-           _source = os.path.relpath(_source_path, _target_dir) +\
-                     "/" +\
-                     os.path.basename(__file__)
-           if type(service) == list:
-               #this is a nested list, right now we support 2-level nested list
-               for sub_service in service:
-                   _invoke(["ln -s %(source)s %(link)s" %
-                           {'source' : _source, 'link' : _target_dir + '/' + sub_service}])
-           else:
-               _invoke(["ln -s %(source)s %(link)s" %
-                       {'source' : _source,
-                        'link' : _target_dir+'/'+service}])
-
+            _source = os.path.relpath(_source_path, _target_dir) +\
+                      "/" +\
+                      os.path.basename(__file__)
+            if type(service) == list:
+                #this is a nested list, right now we support 2-level nested list
+                for sub_service in service:
+                    _invoke(["ln -s %(source)s %(link)s" %
+                            {'source' : _source, 'link' : _target_dir + '/' + sub_service}])
+            else:
+                _invoke(["ln -s %(source)s %(link)s" %
+                        {'source' : _source,
+                         'link' : _target_dir+'/'+service}])
         print("done.\ntry ghelp for more info")
 
 def GITStatus(srv, param):
     """
     gst
-    show the status (what have been changed) between repositories, branches or versions.
+    show the status (what have been changed) between repositories, branches or hashes.
     gst(rd): without (rd) and any parameters, is equal to 'git status -s', showing the changed
              files between working copy and the HEAD of current local branch.
 
-             when followed by a version/branch string, 'gst' will show the changed files between
-             two versions or branches' HEAD
+             when followed by a hash/branch string, 'gst' will show the changed files between
+             two hashes or branches' HEAD
              examples are "<branch1>..<branch2>", changes between branch1 HEAD and branch2 HEAD
                           "<branch>": changes between current working copy and branch
-                          "<version sha1>..<version sha2>": changes between sha1 and sha2
-                          "<version sha>": changes between current working copy and sha
-                          other git valid version strings
+                          "<hash sha1>..<hash sha2>": changes between sha1 and sha2
+                          "<hash sha>": changes between current working copy and sha
+                          other git valid hash strings
 
              with (r), show the changed files between the current branch (in local repository)
              with that of its remote branch (REMOTE_BRANCH by default)
@@ -546,7 +512,7 @@ def GITStatus(srv, param):
             !         !   ignored
             ----------------------------------------------
 
-        When comparing between versions/branches, there will be no detailed status code.
+        When comparing between hashes/branches, there will be no detailed status code.
         In Git-Tool a '*' is used in this case instead.
 
         * http://progit.org/book/ch2-2.html has more details
@@ -574,9 +540,9 @@ def GITStatus(srv, param):
             if _if_branch_exist(_compare_str) is True: #only one candidate given, which is a branch
                 _comp2, _comp1 = _compare_str, _get_current_branch()
             elif 'unknown revision' in _status: #something wrong with the given candidate
-                _exit_with_error('unknown version/branch, please check')
-            else:#assume this is comparison between versions
-                _comp2, _comp1 = _compare_str, _get_versions(1)[0]
+                _exit_with_error('unknown hash/branch, please check')
+            else:#assume this is comparison between hashes
+                _comp2, _comp1 = _compare_str, _get_hashes()[0]
             _changed_not_commited_sign = 'MODIFIED ' if _get_uncommited_changed_files()\
                                               else ''
             _comp1 = _changed_not_commited_sign + _comp1
@@ -594,6 +560,7 @@ def GITStatus(srv, param):
     _total = 'Changed files: ' + color['red'] + str(_changes) + _end_
     _files = FileBall(_changed + _untracked)
     _ans = _get_answer(prefix = _make_msg_bar(_make_status_header(_comp1, _comp2)), prompt = '',
+                       default = '/e',
                        ball = _files,
                        help = _git_status_code + '/d to revert a changed file, or Enter to quit')
     return ''
@@ -1093,54 +1060,59 @@ def _push_to_remote():
     _cmd = git.push(repo = _url, branch = _get_current_branch(), ref = _ref)
     return _invoke([_cmd])
 
-#-------------------version helppers
-#prompt the user a list of versions and ask for a selected version
-def _select_version(since = '7', until = '0'):
+#-------------------hash helppers
+#prompt the user a list of hashes and ask for a selected hash
+def _select_hash(since = '7', until = '0'):
     _group_size = since
     while True:
         print(GITInfo(srv = '', param = ['gif', since, until]))
-        _ans = _get_answer(help = 'Type:\n' +
-                                  '    ID of the version you want, or\n' +
-                                  '    Enter directly for more versions, or\n' +
-                                  '    ["more" ID] for further details of the version')
+        _ans = _get_answer(default = 'more',
+                           help = 'Type:\n' +
+                                  '    ID of the hash you want, or\n' +
+                                  '    Enter directly or "more" for more hashes, or\n' +
+                                  '    "more <ID>" for further details of the hash')
         if _ans.startswith('more'):
-            print(_invoke([git.log(version = _split(_ans)[-1], num = 1)]))
+            print(_invoke([git.log(hash = _split(_ans)[-1], num = 1)]))
             raw_input('Any key to continue...')
-        elif '' == _ans:
+        elif _ans == 'more':
             until = since
             since += _group_size
         else:
             return _ans
         continue
 
-#get file differences between two versions
-def _get_version_change(with_previous_version = False):
-    if with_previous_version is True: #obtain the current and its previous version
-        _current_version, _base_version = _get_versions(2)
-    else: #get the versions given by the user
+def _select_hash_range(with_previous_hash = False):
+    if with_previous_hash is True: #obtain the current and its previous hash
+        _current_hash, _base_hash = _get_hashes(2)
+    else: #get the hashes given by the user
         print("[+] Select the" + color['red'] + " initial " + _end_ +
-                "version that your changes are based on")
-        _base_version = _select_version(since = 4)
+                "hash that your changes are based on")
+        _base_hash = _select_hash(since = 4)
         print("[+] Select the" + color['red'] + " new " + _end_ +
-                "version that your changes are based on")
-        _current_version = _select_version(since = 4)
-    _version_str = _base_version + '..' + _current_version
-    _file_list = _invoke([git.diff(selection = _version_str, name_only = True)]) #list all changed files
+                "hash that your changes are based on")
+        _current_hash = _select_hash(since = 4)
+    return _base_hash + '..' + _current_hash
+
+#get file differences between two hashes
+def _get_hash_change(with_previous_hash = False):
+    _hash_str = _select_hash_range(with_previous_hash)
+    #list all changed files
+    _file_list = _invoke([git.diff(selection = _hash_str, name_only = True)])
     print(_file_list)
     _tmp = _get_answer(prompt = 'Are the files that you changed? [y/N]', default = 'n')
     if _tmp is 'N' or _tmp is 'n':
         return None, None
     else:
-        return _file_list, _version_str
+        return _file_list, _hash_str
 
-#get the current version string
-def _get_versions(num):
-    _version_str = _invoke([git.log(num = num, format = '%h')])
-    return _split(_version_str, '\n')[:-1] #get rid of the last empty line
+#get the current hash string
+def _get_hashes(num):
+    _hash_str = _invoke([git.log(num = num, format = '%h')])
+    return _split(_hash_str, '\n')[:-1] #get rid of the last empty line
 
-#check if a version exists
+#check if a hash exists
 def _if_ver_exist(ver):
-    _tmp = _invoke([git.revparse(version = ver)])
+    _tmp = _invoke([git.revparse(hash = ver)])
     return not re.search('unknown revision', _tmp)
 
 #-------------------path helppers
@@ -1186,10 +1158,10 @@ def _delete_source(source):
 def _get_uncommited_changed_files():
     return _invoke([git.diff(name_only = True)])
 
-def _number_of_changed_files(_versions = '', _remote_branch = '', _file = ''):
+def _number_of_changed_files(_hashes = '', _remote_branch = '', _file = ''):
     if _file:
         return 1
-    _tmp = _invoke([git.diff(selection = _versions if _versions else _remote_branch, name_only = True)])
+    _tmp = _invoke([git.diff(selection = _hashes if _hashes else _remote_branch, name_only = True)])
     return len(_split(_tmp, '\n')) - 1
 
 #return list of changed files and a list of untracked files from the output of 'git status -s'
@@ -1218,13 +1190,13 @@ def _revert_file_item(item):
     elif re.search('^[MARCD]_', item): #index and worktree are the same, need to reset first
         _invoke([git.reset(file = _file)])
         _invoke([git.checkout(target = _file)])
-    elif item.strip().startswith('??'): #the file is out of version control
+    elif item.strip().startswith('??'): #the file is out of hash control
         _invoke(['rm ' + _file])
     else:
         _exit_with_error('oops, some exceptions occur')
     return True, '%s reverted' % _file
     #TODO: what to do if file is commited, but need to delete from a diff list
-    #   this means we need to copy a specified version to overwrite
+    #   this means we need to copy a specified hash to overwrite
 
 def _remove_link_file(x):
     _fullpath = sys.argv[0]
@@ -1240,9 +1212,8 @@ SERVICES = [ 'gsv',
              'gcf',
              'gif', 'gift', 'gifg',
              'gdi',
-             [ 'gdi' + x for x in allperm('rvf')], # combination of 'r','v','f'
-             [ 'gdi' + x for x in allperm('2rvf')], # combination of 'r','v','f', '2'
-             [ 'gdi' + x for x in allperm('3rvf')], # combination of 'r','v','f', '3'
+             [ 'gdi' + x for x in allperm('2rh')], # combination of 'r','h','2'
+             [ 'gdi' + x for x in allperm('3rh')], # combination of 'r','h','3'
              'ghelp' ]
 
 CALL_TABLE = { 'gst': GITStatus,

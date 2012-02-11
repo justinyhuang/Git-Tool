@@ -1,10 +1,14 @@
 def diff(selection = '', name_only = True):
     return 'git diff %s %s' % (selection, '--name-only' if name_only else '')
 
-def log(version = '', num = 0, format = '', param = ''):
-    return 'git log %(num)s %(version)s %(format)s %(other)s' %\
+def difftool(difftool, hashes, remote_branch, file):
+    return 'git difftool -y -t %(t)s %(h)s %(r)s %(f)s' %\
+           {'t': difftool, 'h': hashes, 'r': remote_branch, 'f': file}
+
+def log(hash = '', num = 0, format = '', param = ''):
+    return 'git log %(num)s %(hash)s %(format)s %(other)s' %\
           {'num': ('-%d' % num) if num > 0 else '',
-           'version': version if version else '',
+           'hash': hash if hash else '',
            'format': ("--format='%s'" % format) if format else '',
            'other': param if param else ''}
 
@@ -65,8 +69,8 @@ def config(config = '', section = '', value = ''):
         return 'git config --local %s' % section if config == 'local'\
           else 'git config --global %s' % section
 
-def revparse(version = '', param = ''):
-    return 'git rev-parse %s %s' % (version, param)
+def revparse(hash = '', param = ''):
+    return 'git rev-parse %s %s' % (hash, param)
 
 def reset(file):
     return 'git reset %s' % file
