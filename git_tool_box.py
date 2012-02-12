@@ -6,14 +6,14 @@ Available services:
    gsv: Git SaVe, to 'save' your changes
    gld: Git LoaD, to 'load' new data as/into current working copy
    gdi: Git DIff, compare file/s between commits/branches
-   gif: Git InFo, shows basic information of the current hash
    gst: Git STatus, list modified/added/removed files between hashes/branches
+   gls: Git List, shows basic information of the current hash
    ghelp: help info for GITUtil
 Proposed services:
    ???gfl: Git File, to fetch a file from a hash
 Dependencies (please install):
    git: Git-Tool is a wrapper of git
-   graphviz and qiv: Git-Tool needs both to show graphical hash tree via gifg
+   graphviz and qiv: Git-Tool needs both to show graphical hash tree via glsg
 """
 import os
 import re
@@ -24,6 +24,7 @@ import pdb
 from optparse import OptionParser
 
 """
+TODO: add index to the graphical commit tree.
 TODO: redesign the services into: gsv, gld, gdi, gst, gcf, gls
 TODO: check files in /usr/lib/git-core in workstation and see how to enable write permission when doing vimdiff
 TODO: add remove resource and remote-branch feature
@@ -98,7 +99,7 @@ def GITSave(srv = '', param = ''):
         _invoke(['mv %s %s' % (_patch_file, _target_dir)])
         return '\npatch saved to %s/%s' % (_target_dir, _patch_file)
     else: #do a push or a commit
-        if _get_uncommited_changed_files(): #there are changed files to commit
+        if _num_uncommited_files(): #there are changed files to commit
             _ans=_get_answer(prompt = 'Back up in ' +\
                              color['red'] + _current_branch + _end_ + ' ? [Y/n]',
                              default = 'y')
@@ -261,6 +262,164 @@ def GITDiff(srv, param):
         _tmp = _invoke([_cmd])
     return ''
 
+def GITStatus(srv, param):
+    """
+    gst
+    To show the status (what have been changed) between:
+       * working copy and the latest commit.
+         'gst' shows the changed files
+       * two commits/branch HEADs
+         'gst <hash1>..<hash2>' or 'gst <branch1>..<branch2>' shows the changed files
+         'gsth' allows to select two hashes to show the changed files between them
+       * working copy and the given commit/branch HEAD
+         'gst <hash>' or 'gst <branch>' shows the changed files
+       * working copy and its tracked/linked remote
+         'gstr' shows the changed files
+
+    To only show changed files in current directory:
+         'gstd' will do the job.
+    """
+    _git_status_code =\
+    """
+        XY PATH1 -> PATH2 maps to
+        [Stage Status][Worktree Status] [Path in HEAD] -> [Path in Stage/Worktree]
+            _ = unmodified
+            M = modified
+            A = added
+            D = deleted
+            R = renamed
+            C = copied
+            U = updated but unmerged
+
+            Ignored files are not listed, unless --ignored option is in effect,
+            in which case XY are !!.
+
+            X        Y    Meaning
+            ----------------------------------------------
+            _       [MD]  not updated
+            M      [_MD]  updated in index
+            A      [_MD]  added to index
+            D       [_M]  deleted from index
+            R      [_MD]  renamed in index
+            C      [_MD]  copied in index
+            [MARC]    _   index and work tree matches
+            [_MARC]   M   work tree changed since index
+            [_MARC]   D   deleted in work tree
+            ----------------------------------------------
+            D         D   unmerged, both deleted
+            A         U   unmerged, added by us
+            U         D   unmerged, deleted by them
+            U         A   unmerged, added by them
+            D         U   unmerged, deleted by us
+            A         A   unmerged, both added
+            U         U   unmerged, both modified
+            ----------------------------------------------
+            ?         ?   untracked
+            !         !   ignored
+            ----------------------------------------------
+
+        When comparing between hashes/branches, the status codes are a bit different:
+            A = Added         C = Copied    D = Deleted  M = Modified  R = Renamed
+            T = Type changed  U = Unmerged  X = Unkown   B = pairing Bloken
+
+        * http://progit.org/book/ch2-2.html has more details
+    """
+    _check_git_path()
+    _isdir, _isremote, _ishash = ('d' in srv), ('r' in srv), ('h' in srv)
+    _compare_str = param[1] if len(param) > 1 else ''
+    _cmds, _status = list(), ''
+    if _isremote: #comparing with the remote branch
+        _compare_str = _get_remote_branch()
+    elif _ishash:
+        _compare_str = _select_hash_range()
+    if _compare_str:#with comparison objects specified, use 'git diff'
+        for t in 'ACDMRTUXB':#diff with different diff filter to get the change's type
+            _cmds.append(git.diff(selection = _compare_str, name_only = True, type = t))
+    else:# without comparison objects specified, use 'git status'
+        _cmds.append(git.status(param = '-s'))
+    for c in _cmds:
+        if _isdir: #only show the touched files in the current directory
+            c += ' -- ' + os.getcwd()
+        _tmp = _invoke([c])
+        _tmp = _translate_status_code(c, _tmp)
+        _status += _tmp[:_tmp.rfind('\n')] + '\n' if _tmp else ''
+    _final_str = '' # prepare for a prettified outcome
+    if _compare_str:#show changed files between two commits
+        if '..' in _compare_str: #two compare candidates are given
+            _comp1, _comp2 = _split(_compare_str, '..')
+        else:
+            if _if_branch_exist(_compare_str): #only one candidate given, which is a branch
+                _comp2, _comp1 = _compare_str, _get_current_branch()
+            elif 'unknown revision' in _status: #something wrong with the given candidate
+                _exit_with_error('unknown hash/branch, please check')
+            else:#assume this is comparison between hashes
+                _comp1, _comp2 = _compare_str, _get_hashes(1)[0]
+            if _num_uncommited_files(): #show 'working copy' if there is any local change
+                _comp2 = 'working copy'
+        if not _status or not _status.strip(' '):
+            _status = '' #there is no changes found
+            _changes = 0
+        else:
+            _changes = len(_split(_status, '\n')) - 1
+        _changed = _split(_status, '\n')[:-1]
+        _untracked= []
+    else: #show changed but not yet commited files, with indexes added
+        _changed, _untracked= _get_changed_files(_status)
+        _changes = len(_changed)
+        _comp1, _comp2 = _get_current_branch(), 'working copy'
+    _total = 'Changed files: ' + color['red'] + str(_changes) + _end_
+    _files = FileBall(_changed + _untracked)
+    _ans = _get_answer(prefix = _make_msg_bar(_make_status_header(_comp1, _comp2)), prompt = '',
+                       default = '/e',
+                       help = _git_status_code,
+                       ball = _files)
+    return ''
+
+def GITList(srv, param):
+    """
+    gls
+    To show a list of commits with the information of:
+        * hash, date and comment.
+          'gls <n>' shows n latest commits' info.
+          When no parameter is given, shows that of the latest commit.
+          'gls <since index> <until index>' shows all the commits
+          between the two indexes.
+          e.g 'gls 3 0' shows the commits from HEAD to the 3rd parent of HEAD
+              'gls 7 4' shows the commits from the 4th parent to the 7th parent of HEAD
+        * hash, date, comment, branch and tag.
+          'glst' shows more information including branches and tags, if there is any.
+          However, fetching the tag info would take a bit more time.
+        * hash, committer and date in graphics.
+          'glsg' shows a graphical commit tree.
+          *NOTE*: graphviz and qiv is required to enable the 'g' option
+    """
+    _check_git_path()
+    _if_graphic, _if_show_tag = ('g' in srv), ('t' in srv)
+    _since = _until = _num = 0
+    if len(param) == 3: #start and end of a hash segment is given.
+        _since, _until  = int(param[1]), int(param[2])
+    elif len(param) == 2: #the number of hashes is given.
+        _num = int(param[1])
+    else: #default, show the latest hash info
+        _num = 1
+    if _if_graphic:
+        _do_log_graphic(_num, _since, _until)
+        return ''
+    else:
+        if _num != 0:
+            _range = '-%d' % _num
+        else:
+            _range = "-%(num_of_log)d --skip=%(num_to_skip)d" %\
+                    {'num_of_log': abs(_since - _until) + 1,
+                     'num_to_skip': min(_since, _until) - 1}
+        if _if_show_tag is True: #show the tag info
+            print("this will take a while...")
+            _result = _do_log_tag(_range)
+        else:
+            _format='___\nRev:       %h%nDate:     %cd%nComment:  %s'
+            _result = _do_log(_range, _format)
+        return _result
+
 def GITConfig(srv, param):
     """ gcf
         show the configuration of the current repository and the global settings.
@@ -304,89 +463,6 @@ def GITConfig(srv, param):
     _ret += "difftool.second: %s\n" % _second_diff_tool
     _ret += "difftool.third: %s\n" % _third_diff_tool
     return _ret
-
-_dot_file = '/tmp/gittool.dotty.tmp'
-_svg_file = '/tmp/gittool.dotty.svg'
-def GITInfo(srv, param):
-    """gif
-       to display the hash/branch/tag info
-       gif(tg): gif <n> shows n latest hashes' info
-                    when no parameter is given, only the current hash info will be shown
-                gif <since hash> <until hash>
-                    display all the hashes between the since_hash and the until_hash
-                    e.g 'gif 3 0' shows the hashes from HEAD to the 3rd parent of HEAD
-                        'gif 7 4' shows the hashes from the 4th parent to the 7th parent of HEAD
-                    * the tool is smart enough even you put the two hashes in the other order =)
-                with (t) you will get the tag info if there is any.
-                    * fetching tag info would take a bit more time
-                with (g) you will get graphic hash tree expression based on a dot file.
-                    *NOTE*: graphviz and qiv is required to enable the 'g' option
-    """
-    _check_git_path()
-    _if_graphic, _if_show_tag = ('g' in srv), ('t' in srv)
-    _since = _until = _num = 0
-    if len(param) == 3: #start and end of a hash segment is given.
-        _since, _until  = int(param[1]), int(param[2])
-    elif len(param) == 2: #the number of hashes is given.
-        _num = int(param[1])
-    else: #default, show the latest hash info
-        _num = 1
-    if _if_graphic is True:
-        if _num != 0:
-            _range = 'HEAD' + _num * '^' + '...HEAD' + ' --ancestry-path'
-        #_format = '"%h" [label="<f0> %h|{<f1> %an|<f2> %cd}"]\n"%h":f0 -> {%p}'
-        _format = """"%h" [label=<<TABLE>
-                                <TR><TD ROWSPAN="2" PORT="f0" BGCOLOR="bisque">%h</TD>
-                                    <TD>%an</TD></TR>
-                                <TR><TD>%cd</TD></TR>
-                                </TABLE>>]\n"%h":f0 -> {%p}
-                  """
-    else:
-        if _num != 0:
-            _range = '-%d' % _num
-        else:
-            _range = "-%(num_of_log)d --skip=%(num_to_skip)d" %\
-                    {'num_of_log': abs(_since - _until) + 1,
-                     'num_to_skip': min(_since, _until) - 1}
-        _format='___%nRev:       %h%nDate:     %cd%nComment:  %s'
-    if _if_show_tag is True: #show the tag info
-        print("this will take a while...")
-        _cmd = git.log(hash = _range, format = '%ad|%h|%s|%d',
-                        param = '--abbrev-commit --date=short')
-        _logs = _split(_invoke([_cmd]), '\n')
-        _result = ''
-        for _line in _logs:
-            [_date, _hash, _comment, _tmp] = _line.split('|') if _line else ['', '', '', '']
-            _tmp = _split(_tmp.strip(' ()'), ', ')
-            _branch = _get_branches_with_commit(_hash)
-            _container_tags = _invoke(["git tag --contains %s" % _hash])
-            _container_tags = _split(_container_tags, '\n')
-            if _container_tags:
-                #the hash has tags attached, get the tags on this specific hash
-                _tags = list(set(_tmp) & set(_container_tags))
-                _result += '___\n'
-                _result += 'Rev: %s\nDate: %s\nBranch: %s\nComment: %s\nTags: %s\n' %\
-                           (_hash, _date, _branch, _comment, _tags)
-            else: #a hash without any tag
-                _result += '___\n'
-                _result += 'Rev: %s\nDate: %s\nBranch: %s\nComment: %s\n' %\
-                           (_hash, _date, _branch, _comment)
-        return _result
-    else:
-        _result = _invoke([git.log(hash = _range, format = _format,
-                                   param = '--date=short')])
-    if _if_graphic is True:
-        #link hashes with arrows
-        _result = re.sub('"[a-f0-9]{7}":f0 -> \{[ a-f0-9]+\}', _build_merge_arrows, _result)
-        _result = 'digraph G{\nnode [shape=plaintext]\n'\
-                + _result\
-                + '}' #get data ready for dotty
-        with open(_dot_file, 'w') as f:
-            f.write(_result)
-        _tmp = _invoke(['dot -Tsvg %s > %s' % (_dot_file, _svg_file)])
-        _cmd = ['qiv', _svg_file]
-        return _invoke(_cmd, detached=True) #feed the data to dotty
-    return _result
 
 #setup the environment for first use
 def GITSetup(param):
@@ -452,119 +528,6 @@ def GITSetup(param):
                          'link' : _target_dir+'/'+service}])
         print("done.\ntry ghelp for more info")
 
-def GITStatus(srv, param):
-    """
-    gst
-    show the status (what have been changed) between repositories, branches or hashes.
-    gst(rd): without (rd) and any parameters, is equal to 'git status -s', showing the changed
-             files between working copy and the HEAD of current local branch.
-
-             when followed by a hash/branch string, 'gst' will show the changed files between
-             two hashes or branches' HEAD
-             examples are "<branch1>..<branch2>", changes between branch1 HEAD and branch2 HEAD
-                          "<branch>": changes between current working copy and branch
-                          "<hash sha1>..<hash sha2>": changes between sha1 and sha2
-                          "<hash sha>": changes between current working copy and sha
-                          other git valid hash strings
-
-             with (r), show the changed files between the current branch (in local repository)
-             with that of its remote branch (REMOTE_BRANCH by default)
-
-             with (d), the tool will only show a list of changed files in the
-             current directory
-    """
-    _git_status_code =\
-    """
-        XY PATH1 -> PATH2 maps to
-        [Stage Status][Worktree Status] [Path in HEAD] -> [Path in Stage/Worktree]
-            _ = unmodified
-            M = modified
-            A = added
-            D = deleted
-            R = renamed
-            C = copied
-            U = updated but unmerged
-
-            Ignored files are not listed, unless --ignored option is in effect,
-            in which case XY are !!.
-
-            X        Y    Meaning
-            ----------------------------------------------
-            _       [MD]  not updated
-            M      [_MD]  updated in index
-            A      [_MD]  added to index
-            D       [_M]  deleted from index
-            R      [_MD]  renamed in index
-            C      [_MD]  copied in index
-            [MARC]    _   index and work tree matches
-            [_MARC]   M   work tree changed since index
-            [_MARC]   D   deleted in work tree
-            ----------------------------------------------
-            D         D   unmerged, both deleted
-            A         U   unmerged, added by us
-            U         D   unmerged, deleted by them
-            U         A   unmerged, added by them
-            D         U   unmerged, deleted by us
-            A         A   unmerged, both added
-            U         U   unmerged, both modified
-            ----------------------------------------------
-            ?         ?   untracked
-            !         !   ignored
-            ----------------------------------------------
-
-        When comparing between hashes/branches, there will be no detailed status code.
-        In Git-Tool a '*' is used in this case instead.
-
-        * http://progit.org/book/ch2-2.html has more details
-    """
-    _check_git_path()
-    _isdir, _isremote = ('d' in srv), ('r' in srv)
-    _compare_str = param[1] if len(param) > 1 else ''
-    if _isremote is True:   #comparing with the remote branch
-        try:
-            _compare_str = _get_remote_branch()
-        except ConfigItemMissing:
-            _exit_with_error("There are item or section missing in the config file")
-    #depends on the compare_str, this could be a'git status' or a 'git diff''
-    _cmd = git.diff(selection = _compare_str, name_only = True) if _compare_str\
-            else git.status(param = '-s')
-    if _isdir is True: #only show the touched files in the current directory
-        _cmd += ' -- ' + os.getcwd()
-    _tmp = _invoke([_cmd])
-    _status = _translate_status_code(_cmd, _tmp)
-    _final_str = '' # prepare for a prettified outcome
-    if _compare_str:#show changed files between two commits
-        if '..' in _compare_str: #two compare candidates are given
-            _comp2, _comp1 = _split(_compare_str, '..')
-        else:
-            if _if_branch_exist(_compare_str) is True: #only one candidate given, which is a branch
-                _comp2, _comp1 = _compare_str, _get_current_branch()
-            elif 'unknown revision' in _status: #something wrong with the given candidate
-                _exit_with_error('unknown hash/branch, please check')
-            else:#assume this is comparison between hashes
-                _comp2, _comp1 = _compare_str, _get_hashes()[0]
-            _changed_not_commited_sign = 'MODIFIED ' if _get_uncommited_changed_files()\
-                                              else ''
-            _comp1 = _changed_not_commited_sign + _comp1
-        if _status is None or _status.strip(' ') is None:
-            _status = '' #there is no changes found
-            _changes = 0
-        else:
-            _changes = len(_split(_status, '\n')) - 1
-        _changed = _split(_status, '\n')[:-1]
-        _untracked= []
-    else: #show changed but not yet commited files, with indexes added
-        _changed, _untracked= _get_changed_files(_status)
-        _changes = len(_changed)
-        _comp2, _comp1 = _get_current_branch(), 'working copy'
-    _total = 'Changed files: ' + color['red'] + str(_changes) + _end_
-    _files = FileBall(_changed + _untracked)
-    _ans = _get_answer(prefix = _make_msg_bar(_make_status_header(_comp1, _comp2)), prompt = '',
-                       default = '/e',
-                       ball = _files,
-                       help = _git_status_code + '/d to revert a changed file, or Enter to quit')
-    return ''
-
 #-------------------INTERNAL CLASSES-------------------
 class Ball(object):
     """
@@ -572,7 +535,7 @@ class Ball(object):
     the carrier is able to perform certain operations on the data it holds.
     """
     def __init__(self, list, name = 'item'):
-        self._list = list     #all the data will be stored in a list
+        self.list = list     #all the data will be stored in a list
         self.name = name
         self.help = "You can: \
           \n   Type the index of the %s or,\
@@ -580,17 +543,17 @@ class Ball(object):
           \n   Use '/d <item_index>' to delete an %s or,\
           \n   Use '/e' to quit" % (self.name, self.name, self.name)
     def __getitem__(self, k):
-        return self._list[k]
+        return self.list[k]
     def get_list(self):
-        return self._list
+        return self.list
     def get_indexed_list(self, highlight):
-        return _index_list(self._list, highlight = highlight)
+        return _index_list(self.list, highlight = highlight)
     def delete(self, item_list, func):
         item_list.sort(reverse=True) #remove the very last item in the list first
         for x in item_list:
-            _result, _msg = func(self._list[x])
+            _result, _msg = func(self.list[x])
             if _result is True: #user might choose not to delete
-                self._list.remove(self._list[x])
+                self._list.remove(self.list[x])
             print _msg
 
 class BranchBall(Ball):
@@ -607,7 +570,10 @@ class HashBall(Ball):
     A ball that holds a list of hash
     """
     def __init(self, list):
-        super(FileBall, 'hash', self).__init__(list)
+        super(HashBall, 'hash', self).__init__(list)
+    def __getitem__(self, k): #return the hash only
+        _firstline = self.list[k].split('\n')[0]
+        return _firstline.split()[-1]
     def delete(self, item_list):
         _exit_with_error("Deleting a hash is not allowed")
 
@@ -674,14 +640,14 @@ def _invoke(cmd, detached = False):
 
 #helper function to prompt users information and receive answers
 def _get_answer(prefix = '', prompt = '', postfix = '', default = None,
-                help = 'No help available... ', ball = None, hl = -1):
-    if 'No help available... ' != help or\
-       (ball and ball.help): # show colored prompt if help is available
-        _ps = color['lightblue'] + PROMPT_SIGN + _end_
-        if ball and ball.help:
-            help = ball.help
-    else:
+                help = '', ball = None, hl = -1):
+    if (ball and ball.help): # take the help if it is provided by the ball
+        help += ball.help
+    if not help: #no help is available
+        help = 'No help available... '
         _ps = PROMPT_SIGN
+    else: #show colored prompt if help is available
+        _ps = color['lightblue'] + PROMPT_SIGN + _end_
     while True: #loop until we have an acceptable answer
         if ball: # when a ball is given, show the item list in the ball.
             _prompt = (prefix + '\n' if prefix else '') +\
@@ -724,6 +690,12 @@ def _expand_indexes_from_range(obj):
         _tmp += ' %d ' % x
     return _tmp
 
+#to fill the commit index in graphical commit tree
+def _fill_commit_index(obj):
+    global _commit_index
+    _commit_index += 1
+    return obj.group() + ' [' + str(_commit_index) + '] '
+
 #used in re.sub to modify the matching string and link nodes with arrows
 def _build_merge_arrows(obj):
     _tmp = ''
@@ -737,7 +709,7 @@ def _build_merge_arrows(obj):
 
 #print the header of status result
 def _make_status_header(ver1, ver2):
-    return '[' + color['red'] + ver1 + _end_ + ']' + ' v.s ' +\
+    return '[' + color['red'] + ver1 + _end_ + ']' + ' ==> ' +\
            '[' + color['red'] + ver2 + _end_ + ']'
 
 def _merge_or_checkout():
@@ -771,17 +743,19 @@ def _traverse_nested_list_with_action(lst, action):
 
 # translate the output of git status -s into git-tool's format
 def _translate_status_code(cmd, ori):
-    if ori is None:
-        return ''
-    else:
+    if ori:
         if cmd.startswith('git status'): #status code is given by git status
             return re.sub('^[MADRC ]{2}|\n[MADRC ]{2}', #replace space status code to '_'
                           lambda x : x.group().replace(' ', '_'),
                           ori)
-        else: #status code is not available when command is git diff
-            return re.sub('^|\n', #no status code is available when using git diff
-                          lambda x: x.group() + '*  ',
+        else: #status code is that diff-filter value when using git diff
+            _pos = cmd.find('--diff-filter=') + len('--diff-filter=')
+            _status = cmd[_pos]
+            return re.sub('^|\n', #match the beginning of every line
+                          lambda x: x.group() + _status + '  ',
                           ori)
+    else:
+        return ''
 
 #-------------------branch helppers
 #to find if a ref has a local storage
@@ -797,7 +771,10 @@ def _find_local_refs(ref):
 def _select_branch(isremote = False):
     _curbranch, _branch_list = _get_branch_list(isremote)
     _listball = BranchBall(_branch_list)
-    _ans = _get_answer(prefix = '--- Branch List ---', ball = _listball, hl = _curbranch)
+    _ans = _get_answer(prefix = '--- Branch List ---', default = '/e',
+                       ball = _listball, hl = _curbranch)
+    if _ans == '/e': #user enters nothing, might think of quit
+        _exit()
     return _branch_list, _ans
 
 def _make_branch(branch):
@@ -972,6 +949,60 @@ def _set_global(section, value):
     _tmp = _invoke([git.config(config = 'global', section = section, value = value)])
 
 #-------------------functional blocks
+def _do_log(range, format):
+    return _invoke([git.log(hash = range, format = format, param = '--date=short')])
+
+def _do_log_tag(range):
+    _cmd = git.log(hash = range, format = '%ad|%h|%s|%d',
+                   param = '--abbrev-commit --date=short')
+    _logs = _split(_invoke([_cmd]), '\n')[:-1]
+    _result = ''
+    for _line in _logs:
+        [_date, _hash, _comment, _tmp] = _line.split('|') if _line else ['', '', '', '']
+        _tmp = _split(_tmp.strip(' ()'), ', ')
+        _branch = _get_branches_with_commit(_hash)
+        _container_tags = _invoke(["git tag --contains %s" % _hash])
+        _container_tags = _split(_container_tags, '\n')
+        if _container_tags:
+            #the hash has tags attached, get the tags on this specific hash
+            _tags = list(set(_tmp) & set(_container_tags))
+            _result += '___\nRev: %s\nDate: %s\nBranch: %s\nComment: %s\nTags: %s\n' %\
+                       (_hash, _date, _branch, _comment, _tags)
+        else: #a hash without any tag
+            _result += '___\nRev: %s\nDate: %s\nBranch: %s\nComment: %s\n' %\
+                       (_hash, _date, _branch, _comment)
+    return _result
+
+_dot_file = '/tmp/gittool.dotty.tmp'
+_svg_file = '/tmp/gittool.dotty.svg'
+_commit_index = 0
+def _do_log_graphic(num, hash_from, hash_to):
+    if num != 0:
+        _range = 'HEAD' + num * '^' + '..HEAD' + ' --ancestry-path'
+    else:
+        _range = 'HEAD'+ hash_to  * '^' + '..HEAD' + hash_from * '^' + ' --ancestry-path'
+    #_format = '"%h" [label="<f0> %h|{<f1> %an|<f2> %cd}"]\n"%h":f0 -> {%p}'
+    _format = """"%h" [label=<<TABLE>
+                            <TR><TD ROWSPAN="2" PORT="f0" BGCOLOR="bisque"> %h</TD>
+                                <TD>%an</TD></TR>
+                            <TR><TD>%cd</TD></TR>
+                            </TABLE>>]\n"%h":f0 -> {%p}
+              """
+    _result = _invoke([git.log(hash = _range, format = _format, param = '--date=short')])
+    #link hashes with arrows
+    _result = re.sub('"[a-f0-9]{7}":f0 -> \{[ a-f0-9]+\}', _build_merge_arrows, _result)
+    _result = 'digraph G{\nnode [shape=plaintext]\n'\
+            + _result\
+            + '}' #get data ready for dotty
+    global _commit_index
+    _commit_index = 0
+    _result = re.sub('BGCOLOR="bisque">', _fill_commit_index, _result)
+    with open(_dot_file, 'w') as f:
+        f.write(_result)
+    _tmp = _invoke(['dot -Tsvg %s > %s' % (_dot_file, _svg_file)])
+    _cmd = ['qiv', _svg_file]
+    return _invoke(_cmd, detached=True) #feed the data to dotty
+
 def _do_rebase(from_ref):
     print("rebasing from %s ..." % from_ref)
     return _invoke([git.rebase()])
@@ -1062,21 +1093,26 @@ def _push_to_remote():
 
 #-------------------hash helppers
 #prompt the user a list of hashes and ask for a selected hash
-def _select_hash(since = '7', until = '0'):
+def _select_hash(since = 7, until = 0):
     _group_size = since
     while True:
-        print(GITInfo(srv = '', param = ['gif', since, until]))
-        _ans = _get_answer(default = 'more',
-                           help = 'Type:\n' +
-                                  '    ID of the hash you want, or\n' +
-                                  '    Enter directly or "more" for more hashes, or\n' +
-                                  '    "more <ID>" for further details of the hash')
-        if _ans.startswith('more'):
-            print(_invoke([git.log(hash = _split(_ans)[-1], num = 1)]))
-            raw_input('Any key to continue...')
-        elif _ans == 'more':
+        #TODO: get rid of using the service function here.
+        _range = "-%(num_of_log)d --skip=%(num_to_skip)d" %\
+                {'num_of_log': abs(since - until) + 1,
+                 'num_to_skip': min(since, until) - 1}
+        _format='Rev:       %h%n\tDate:     %cd%n\tComment:  %s|'
+        _tmp = _do_log(_range, _format)
+        _ball = HashBall(_tmp.split('|\n')[:-1])
+        _ans = _get_answer(default = 'more', ball = _ball,
+                           help = '   Enter directly or "more" for more hashes, or\n' +
+                                  '   "more <ID>" for further details of the hash, or\n')
+        if _ans == 'more':
             until = since
             since += _group_size
+        elif _ans.startswith('more'):
+            _index = int(_split(_ans)[-1])
+            print(_invoke([git.log(hash = _ball[_index], num = 1)]))
+            raw_input('Press Enter to continue...')
         else:
             return _ans
         continue
@@ -1085,11 +1121,9 @@ def _select_hash_range(with_previous_hash = False):
     if with_previous_hash is True: #obtain the current and its previous hash
         _current_hash, _base_hash = _get_hashes(2)
     else: #get the hashes given by the user
-        print("[+] Select the" + color['red'] + " initial " + _end_ +
-                "hash that your changes are based on")
+        print("[+] Select the" + color['red'] + " start " + _end_ + 'hash')
         _base_hash = _select_hash(since = 4)
-        print("[+] Select the" + color['red'] + " new " + _end_ +
-                "hash that your changes are based on")
+        print("[+] Select the" + color['red'] + " end " + _end_ + 'hash')
         _current_hash = _select_hash(since = 4)
     return _base_hash + '..' + _current_hash
 
@@ -1111,7 +1145,7 @@ def _get_hashes(num):
     return _split(_hash_str, '\n')[:-1] #get rid of the last empty line
 
 #check if a hash exists
-def _if_ver_exist(ver):
+def _if_hash_exist(ver):
     _tmp = _invoke([git.revparse(hash = ver)])
     return not re.search('unknown revision', _tmp)
 
@@ -1154,9 +1188,6 @@ def _delete_source(source):
     pass
 
 #-------------------file helppers
-#get changed but not yet commited files
-def _get_uncommited_changed_files():
-    return _invoke([git.diff(name_only = True)])
 
 def _number_of_changed_files(_hashes = '', _remote_branch = '', _file = ''):
     if _file:
@@ -1192,8 +1223,10 @@ def _revert_file_item(item):
         _invoke([git.checkout(target = _file)])
     elif item.strip().startswith('??'): #the file is out of hash control
         _invoke(['rm ' + _file])
+    elif item.strip().startswith('*'): #the file status is unknown other than 'changed'
+        _exit_with_error("don't know how to revert %s" % _file)
     else:
-        _exit_with_error('oops, some exceptions occur')
+        _exit_with_error('oops, error when reverting file: %s' % item)
     return True, '%s reverted' % _file
     #TODO: what to do if file is commited, but need to delete from a diff list
     #   this means we need to copy a specified hash to overwrite
@@ -1210,14 +1243,14 @@ SERVICES = [ 'gsv',
              ['gst' + x for x in allperm('dr')], #combination of 'd', 'r'
              ['gst' + x for x in allperm('br')], #combination of 'b', 'r'
              'gcf',
-             'gif', 'gift', 'gifg',
+             'gls', 'glst', 'glsg',
              'gdi',
              [ 'gdi' + x for x in allperm('2rh')], # combination of 'r','h','2'
              [ 'gdi' + x for x in allperm('3rh')], # combination of 'r','h','3'
              'ghelp' ]
 
 CALL_TABLE = { 'gst': GITStatus,
-               'gif': GITInfo,
+               'gls': GITList,
                'gsv': GITSave,
                'gld': GITLoad,
                'gdi': GITDiff,
@@ -1233,18 +1266,21 @@ if __name__ == '__main__':
     #get the service requested by the user
     parser = OptionParser()
     service = parser.get_prog_name()
-    #a major service will always be a 3-character key word
-    if service == 'ghelp':
-        try:
-            print(CALL_TABLE[sys.argv[1][:3]].__doc__)
-        except Exception:
-            print(__doc__)
-    else:
-        if len(sys.argv) == 2 and sys.argv[1] == '?':
-            print(CALL_TABLE[service[:3]].__doc__)
-            _exit()
-        try:
-            result = CALL_TABLE[service[:3]](service[3:], sys.argv)
-            print(result)
-        except KeyError: #if no available service is found, try to install git-tool
-            GITSetup(sys.argv)
+    try:
+        #a major service will always be a 3-character key word
+        if service == 'ghelp':
+            try:
+                print(CALL_TABLE[sys.argv[1][:3]].__doc__)
+            except Exception:
+                print(__doc__)
+        else:
+            if len(sys.argv) == 2 and sys.argv[1] == '?':
+                print(CALL_TABLE[service[:3]].__doc__)
+                _exit()
+            try:
+                result = CALL_TABLE[service[:3]](service[3:], sys.argv)
+                print(result)
+            except KeyError: #if no available service is found, try to install git-tool
+                GITSetup(sys.argv)
+    except ConfigItemMissing:
+        _exit_with_error("There are item or section missing in the config file")

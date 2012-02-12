@@ -1,5 +1,9 @@
-def diff(selection = '', name_only = True):
-    return 'git diff %s %s' % (selection, '--name-only' if name_only else '')
+import pdb
+
+def diff(selection = '', name_only = True, type = 'ACDMRTUXB*'):
+    return 'git diff %s %s %s' % (selection,
+                                  '--name-only' if name_only else '',
+                                  '--diff-filter=%s' % type if type else '')
 
 def difftool(difftool, hashes, remote_branch, file):
     return 'git difftool -y -t %(t)s %(h)s %(r)s %(f)s' %\
