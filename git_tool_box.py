@@ -1009,14 +1009,13 @@ def _do_rebase(from_ref):
 
 #merge branch, assuming frombr and tobr are valid branches
 def _do_merge(from_ref, to_ref = None):
+    if not to_ref:
+        to_ref = _get_current_branch()
     #first check if the from ref is on the same branch of to_ref
     _refs = _invoke([git.branch(contains = from_ref)]).split('\n')
     for r in _refs:
-        if from_ref in r.strip(' *'):
-            if to_ref:
-                _exit_with_error("I cannot merge %s to %s" % (from_ref, to_ref))
-            else:
-                _exit_with_error("I cannot merge %s to current branch" % from_ref)
+        if to_ref == r.strip(' *'):
+            _exit_with_error("I cannot merge %s to %s" % (from_ref, to_ref))
     print("merging from %s ..." % from_ref)
     if to_ref:#we need to first switch to the to ref
         _invoke([git.checkout(target = to_ref)]) #switch to the target branch
