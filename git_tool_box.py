@@ -34,7 +34,7 @@ TODO: add the path of git-tool bin directory to PATH and the path of git-tool py
 
 #-------------------GLOBAL SETTINGS-------------------
 # Edit the following settings to make GITTool fits your need
-DEBUG = True
+DEBUG = False
 COLOR = True
 PROMPT_SIGN = ':> ' # unichr(0x263B) will show a smiling face.
 
@@ -553,7 +553,7 @@ class Ball(object):
         for x in item_list:
             _result, _msg = func(self.list[x])
             if _result is True: #user might choose not to delete
-                self._list.remove(self.list[x])
+                self.list.remove(self.list[x])
             print _msg
 
 class BranchBall(Ball):
@@ -594,7 +594,7 @@ class SourceBall(Ball):
         super(FileBall, self.name, self).__init__(list)
     def delete(self, item_list):
         for x in item_list:
-            if _delete_source(self._list[x]) is True: #user might choose not to delete
+            if _delete_source(self.list[x]) is True: #user might choose not to delete
                 super(FileBall, self).delete_item(x)
 
 class GITError(Exception):
