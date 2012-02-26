@@ -29,7 +29,6 @@ from optparse import OptionParser
 TODO: seems like fetching a remote branch results in a mis-configured remote/merge values, checkout why
 TODO: need to consider the situation when the tool is used without a network connection: we will need to skip the checking of remote branches/repo's
 TODO: improve gdir so that it compares with the REAL remote branch, instead of the local copy.
-TODO: to enable search by commiter/date/hash with gls
 TODO: add the path of git-tool bin directory to PATH and the path of git-tool python files to PYTHONPATH, in gitsetup
 TODO: when there are a long list of remote branches, how would a user pick one easily?
 TODO: check files in /usr/lib/git-core in workstation and see how to enable write permission when doing vimdiff
@@ -192,9 +191,11 @@ def GITDiff(srv, param):
             * 'gdi2'/'gdi3' and its relatives will do diff with the secondary/third diff tool.
 
         'gdi <filename>' with or without other options shows only the difference in the given file.
+
+        'gdic' with or without other options shows a combined diff result.
     """
     check_git_path()
-    _isremote, _ishash = ('r' in srv), ('h' in srv)
+    _isremote, _ishash, _iscombined = ('r' in srv), ('h' in srv), ('c' in srv)
     _difftool = _file = _hashes = _remote_branch = ''
     #look for the user preferred diff tool
     if '2' in srv:
@@ -223,7 +224,10 @@ def GITDiff(srv, param):
         if os.path.isfile(x): #the file exist
             _file = x
             break
-    _cmd = git.difftool(_difftool, _hashes, _remote_branch, _file)
+    if _iscombined:
+        _cmd = git.show(selection = _hashes, param = '-m --pretty=short', file = _file)
+    else:
+        _cmd = git.difftool(_difftool, _hashes, _remote_branch, _file)
     #if there are too many files, warn the user before doing diff
     _num = number_of_changed_files(_hashes, _remote_branch, _file)
     if _num > 7: # i guess 7 is a good limit
@@ -307,11 +311,12 @@ def GITStatus(srv, param):
     _cmds, _status = list(), ''
     if _isremote: #comparing with the remote branch
         _compare_str = get_remote_branch()
+        pdb.set_trace()
     elif _ishash:
         _compare_str = select_hash_range()
     if _compare_str:#with comparison objects specified, use 'git diff'
         for t in 'ACDMRTUXB':#diff with different diff filter to get the change's type
-            _cmds.append(git.diff(selection = _compare_str, name_only = True, type = t))
+            _cmds.append(git.diff(selection = _compare_str, type = t))
     else:# without comparison objects specified, use 'git status'
         _cmds.append(git.status(param = '-s'))
     for c in _cmds:
@@ -356,14 +361,14 @@ def GITList(srv, param):
     """
     gls
     To show a list of commits with the information of:
-        * hash, date and comment.
+        * hash, author, date and comment.
           'gls <n>' shows n latest commits' info.
           When no parameter is given, shows that of the latest commit.
           'gls <since index> <until index>' shows all the commits
           between the two indexes.
           e.g 'gls 3 0' shows the commits from HEAD to the 3rd parent of HEAD
               'gls 7 4' shows the commits from the 4th parent to the 7th parent of HEAD
-        * hash, date, comment, branch and tag.
+        * hash, author, date, comment, branch and tag.
           'glst <n>' or 'glst <since index> <until index>'
           shows more information including branches and tags, if there is any.
           However, fetching the tag info would take a bit more time.
@@ -371,8 +376,10 @@ def GITList(srv, param):
           'glsg <n>' or 'glsg <since index> <until index>'
           shows a graphical commit tree.
           *NOTE*: graphviz and qiv is required to enable the 'g' option
-        * hash, date and comment only from the given author.
+        * hash, author, date and comment only from the given author.
           'glsa <n>' or 'glsa <since index> <until index>'
+        * hash, author, date and comment during a period
+          'glsd' with or without other parameters
     """
     check_git_path()
     _if_graphic, _if_show_tag = ('g' in srv), ('t' in srv)

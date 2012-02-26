@@ -309,7 +309,7 @@ def traverse_nested_list_with_action(lst, action):
 def translate_status_code(cmd, ori):
     if ori:
         if cmd.startswith('git status'): #status code is given by git status
-            return re.sub('^[MADRC ]{2}|\n[MADRC ]{2}', #replace space status code to '_'
+            return re.sub('^[MADRCTUXB ]{2}|\n[MADRCTUXB ]{2}', #replace ' ' status code to '_'
                           lambda x : x.group().replace(' ', '_'),
                           ori)
         else: #status code is that diff-filter value when using git diff
@@ -543,7 +543,6 @@ def do_log_author_or_date(ifauthor, ifdate, format, range, author):
             _options += ' --after="%s"' % _d_start
         if re.match('^[\s]*[\d]{4}-[\d]{1,2}-[\d]{1,2}[\s]*$', _d_end): #the input is valid
             _options += ' --before="%s"' % _d_end
-    pdb.set_trace()
     if ifauthor: #get the logs only with the given author name
         _options += ' --author=%s' % author
     return invoke([git.log(hash = range, format = format,
@@ -715,7 +714,7 @@ def select_hash_range(with_previous_hash = False):
 def get_hash_change(with_previous_hash = False):
     _hash_str = select_hash_range(with_previous_hash)
     #list all changed files
-    _file_list = invoke([git.diff(selection = _hash_str, name_only = True)])
+    _file_list = invoke([git.diff(selection = _hash_str)])
     print(_file_list)
     _tmp = get_answer(prompt = 'Are the files that you changed? [y/N]', default = 'n')
     if _tmp is 'N' or _tmp is 'n':
@@ -790,14 +789,14 @@ def increment_count(type, item):
 def number_of_changed_files(_hashes = '', _remote_branch = '', _file = ''):
     if _file:
         return 1
-    _tmp = invoke([git.diff(selection = _hashes if _hashes else _remote_branch, name_only = True)])
+    _tmp = invoke([git.diff(selection = _hashes if _hashes else _remote_branch)])
     return len(split(_tmp, '\n')) - 1
 
 #return list of changed files and a list of untracked files from the output of 'git status -s'
 def get_changed_files(str):
     _changed_files, _untracked_files = [], []
     if str is not None:
-        _changed_pattern = '^[_MDACU]{1,2}' #modifed/deleted/added/copied/unmerged files
+        _changed_pattern = '^[_MDACUT]{1,2}' #modifed/deleted/added/copied/unmerged/type_changed
         _untracked_pattern = '^\?\?.*' #untracked files
         _file_list = split(str, '\n')[:-1]
         for x in _file_list:

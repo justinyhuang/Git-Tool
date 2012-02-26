@@ -65,6 +65,9 @@ def status(param = ''):
 def showref(branch = ''):
     return 'git show-ref -s %s' % branch
 
+def show(selection = '', param = '', file = ''):
+    return 'git show %s %s %s' % (selection, param, file)
+
 def config(config = '', section = '', value = None):
     if value: #set function
         return 'git config --local %s "%s"' %(section, value) if config == 'local'\
