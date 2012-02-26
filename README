@@ -1,20 +1,28 @@
-Git, though powerful and popular, in most cases is too complicated to use. When I
-need to check what files are changed but not committed, I have to use 'git status';
-while I'd like to check what files are changed between the current branch and the
-master branch, I will have to use 'git diff', and with a lengthy parameter list. :(
+Git, though powerful and popular, in most cases is too complicated to use. The command set is huge,
+the parameters are too many, the design is sophisticated and hense the learning period is too long.
+For a programmer who wants only a tool to manage his/her source code, to master Git and make it
+work requires too much learning. (I bet most of the Git users keep a ProGit or something similar
+on hand)
+I have many questions since using Git:
+    Why use different command for similar requests?
+    Why type long command + parameters when the requirement is simple?
+    What is 'stage' and why one has to understand this when all needed is to back up my changes?
 
-Why use different command for similar requests?
-Why long command when the need is simple?
 This is why GitTool is here.
-GitTool tries to simplify the use of git by wrapping git with a python script and
-roviding simple yet powerful interfaces to the user. To make using git a bit
-easier is what GitTool is for.
+GitTool tries to simplify the use of git by wrapping git with a python script and by providing
+simple yet powerful interfaces to the user.
+To make using git a bit easier is what GitTool is for.
 
 TARGET USER
-GitTool is specialized for those who need to use git everyday but don't like to master the tool. These users only need git to help managing my change sets of the code, as well as communicating with others based on the same repository and history. Spending time to know 1001 ways of using git is unacceptable.
+GitTool is specialized for those who need to use git everyday but don't like to master the tool.
+These users only need git to help managing changes of their work, as well as communicating with
+others based on the same repository and history. Spending time to know 1001 ways of using git is
+unacceptable for them.
 
 FEATURES
-- Easy, short yet powerful commands. In most cases a GitTool command varies from 3 to 5 characters. Very few arguments are required. Some examples are given below as comparison:
+- Easy, short yet powerful commands. In most cases a GitTool command varies from 3 to 5 characters
+  Very few arguments are required. Some examples are given below as comparison: (what Git command
+  will need to accomplish
 
   To show changed but not commited files
   GitTool Command: gst
@@ -26,17 +34,18 @@ FEATURES
   GitTool Command: gst xxx
 
   To check the logs of latest 3 commits
-  GitTool Command: gif 3
+  GitTool Command: gls 3
 
   To check the logs of latest 3 commits, in a graphical version tree
-  GitTool Command: gifg 3
+  GitTool Command: glsg 3
 
   To do a diff of the changed files between version xxx and yyy
-  GitTool Command: gdiv xxx..yyy
+  GitTool Command: gdi xxx..yyy
 
-  To do a diff with vimdiff in a remote-connection, and meld in a local workstation, and bc3 when someone like to see it in bcompare
-  GitTool Command: gdi/gdi1/gid2
-  #when you configure the primary/secondary/last diff tool to vimdiff/meld/bc3 when you use the tool for the first time
+  To do a diff with vimdiff in a remote-connection, and meld in a local workstation, and bc3 when
+  someone like to see it in bcompare
+  GitTool Command: gdi/gdi2/gdi3
+  * what tool would gdi/gdi2/gdi3 use needs setting during installation of the tool
 
   and many other use cases....
 

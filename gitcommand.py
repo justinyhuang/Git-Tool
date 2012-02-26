@@ -65,10 +65,13 @@ def status(param = ''):
 def showref(branch = ''):
     return 'git show-ref -s %s' % branch
 
-def config(config = '', section = '', value = ''):
+def config(config = '', section = '', value = None):
     if value: #set function
         return 'git config --local %s "%s"' %(section, value) if config == 'local'\
           else 'git config --global %s "%s"' %(section, value)
+    elif value == '': #unset the value
+        return 'git config --local --unset %s' % section if config == 'local'\
+          else 'git config --global --unset %s' % section
     else: #get function
         return 'git config --local %s' % section if config == 'local'\
           else 'git config --global %s' % section
@@ -90,3 +93,6 @@ def lsremote(url, branch):
 
 def apply(patch_file, check = False):
     return 'git apply %s %s' % ('--check' if check else '', patch_file)
+
+def add(file):
+    return 'git add %s' % file
