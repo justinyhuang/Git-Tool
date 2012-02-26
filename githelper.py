@@ -636,10 +636,14 @@ def do_fetch(ref):
 
 def do_clone():
     #TODO: check if we have network connected.
-    _source_list = get_source_list('url')
-    _ball = UrlSourceBall(_source_list)
+    _urls = get_source_list('url')
+    _ball = UrlSourceBall(_urls)
     _url = get_answer(prompt = 'Pick a source to clone from', ball = _ball)
-    return invoke([git.clone(_url)])
+    if _url not in [x.split()[0] for x in _urls]: #user type in a new item
+        add_to_source_list('url', _url)
+    print("Cloning %s ..." % _url)
+    invoke([git.clone(_url)])
+    return "Done"
 
 def push_to_remote():
     #TODO: check if we have network connected.
@@ -666,6 +670,8 @@ def push_to_remote():
             _ref = get_answer(prompt = 'Select a REF to push', ball = _ball)
             if _ref not in _refs: #user type in a new item that is not in the ball list
                 add_to_source_list('ref', _ref)
+            increment('url', _url)
+            increment('ref', _ref)
             set_remote_branch(_ref)
     _cmd = git.push(repo = _url, branch = get_current_branch(), ref = _ref)
     return invoke([_cmd])
@@ -766,8 +772,19 @@ def delete_source(source, name):
 #add a new source into the source list
 def add_to_source_list(type, item):
     _len = get_source_list_len(type)
-    set_global('sourcelist.%s.item%d' % (type, (_len + 1)), item)
+    set_global('sourcelist.%s.item%d' % (type, (_len + 1)), item + ' 0')
     set_global('sourcelist.%s.length' % type, str(_len + 1))
+
+#increment the count of a source item
+def increment_count(type, item):
+    _len = get_source_list_len(type)
+    for i in range(_len):
+        _tmp = get_global('sourcelist.%s.item%d' % (type, i))
+        if _tmp.split()[0] == item: # find the matching item
+            set_global('sourcelist.%s.item%d' % (type, i),
+                       '%s %d' % (item, str(_tmp.split()[1]) + 1))
+            return
+    exit_with_error("Something is wrong: can't find the souce item!")
 
 #-------------------file helppers
 def number_of_changed_files(_hashes = '', _remote_branch = '', _file = ''):
