@@ -28,7 +28,6 @@ from optparse import OptionParser
 """
 TODO: seems like fetching a remote branch results in a mis-configured remote/merge values, checkout why
 TODO: need to consider the situation when the tool is used without a network connection: we will need to skip the checking of remote branches/repo's
-TODO: improve gdir so that it compares with the REAL remote branch, instead of the local copy.
 TODO: add the path of git-tool bin directory to PATH and the path of git-tool python files to PYTHONPATH, in gitsetup
 TODO: when there are a long list of remote branches, how would a user pick one easily?
 TODO: check files in /usr/lib/git-core in workstation and see how to enable write permission when doing vimdiff
@@ -310,8 +309,9 @@ def GITStatus(srv, param):
     _compare_str = param[1] if len(param) > 1 else ''
     _cmds, _status = list(), ''
     if _isremote: #comparing with the remote branch
-        _compare_str = get_remote_branch()
-        pdb.set_trace()
+        #_compare_str = get_remote_branch()
+        # to compare with the REAL remote branch, instead of the local copy.
+        _compare_str = get_local(section = 'branch.%s.remote' % get_current_branch())
     elif _ishash:
         _compare_str = select_hash_range()
     if _compare_str:#with comparison objects specified, use 'git diff'
