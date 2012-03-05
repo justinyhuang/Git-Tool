@@ -26,7 +26,10 @@ from githelper import *
 from optparse import OptionParser
 
 """
+TODO: gsv without default url and ref, BREAKS AGAIN! fix it
+TODO: merge doesn't work very well, fix it
 TODO: seems like fetching a remote branch results in a mis-configured remote/merge values, checkout why
+TODO: add functionality to support checking out a file from specific hash (git checkout <file> <hash> might just do that)
 TODO: need to consider the situation when the tool is used without a network connection: we will need to skip the checking of remote branches/repo's
 TODO: add the path of git-tool bin directory to PATH and the path of git-tool python files to PYTHONPATH, in gitsetup
 TODO: when there are a long list of remote branches, how would a user pick one easily?
@@ -126,22 +129,23 @@ def GITLoad(srv, param):
         _curbranch = get_current_branch()
         if len(param) == 2: #something is provided as the parameter
             _in_branch_list = param[1] in get_branch_list()[1]
-            if _ifbranch or _in_branch_list: #user says it is a branch or this is a local branch
-                if merge_or_checkout() == 'c': #checkout
-                    _result = do_checkout_branch(param[1], in_list = _in_branch_list)
-                else: #merge
-                    _result = do_merge(param[1])
-            elif _ifremote or is_remote_branch(param[1]):#this is a remote branch
-                _result = do_fetch(param[1])
-                #TODO: can we support merging from a remote branch?
-            elif _iftag: #user says it is a tag
-                _result = do_checkout_from_commit(param[1])
-            elif os.path.isfile(param[1]): #this is a patch file
-                _result = do_apply(param[1])
+            if _ifbranch or _in_branch_list: #this is a local branch, or the user says so
+                return merge_or_checkout(param[1], _in_branch_list)
+            if _iftag: #user says it is a tag
+                return do_checkout_from_commit(param[1])
+            if _ifremote: #user says it is a remote branch
+                return do_checkout_from_commit(param[1])
+            #is this a remote branch?
+            _remote_branch = is_remote_branch(param[1])
+            if _remote_branch: #yes we find it
+                return do_checkout_from_commit(_remote_branch.split('\t')[-1])
+            #TODO: can we support merging from a remote branch?
+            if os.path.isfile(param[1]): #this is a patch file
+                return do_apply(param[1])
             else: #the last possibility is...tag, try with fingers crossed...
                 _ans = get_answer(prompt = "Is %s a tag? [y/N]" % param[1])
                 if _ans == 'y' or _ans == 'Y':
-                    _result = do_checkout_from_commit(param[1])
+                    return do_checkout_from_commit(param[1])
                 else:
                     exit_with_error("Don't know how to load [%s]" % param[1])
         else: #no parameter is given.
@@ -149,16 +153,13 @@ def GITLoad(srv, param):
                 #TODO: when checking out a remote branch, we need to ask for a new branch name!
                 #now we are in a no-branch state when the remote branch is checked out.
                 _branch_list, _selected_branch = select_branch(_ifremote)
-                if _ifremote or merge_or_checkout() == 'c':# fetch from remote, or checkout locally
-                    _result = do_checkout_branch(_selected_branch, _branch_list, _ifremote)
-                else: #merge
-                    _result = do_merge(_ans)
+                if _ifremote:# fetch from remote
+                    return do_checkout_branch(_selected_branch, _branch_list, _ifremote)
+                else: #it is a local branch
+                    return merge_or_checkout()
             elif _ifhash: #checkout a hash to a new branch
                 _hash = select_hash()
-                if merge_or_checkout() == 'c': #checkout
-                    do_checkout_from_commit(_hash)
-                else: #merge
-                    _result = do_merge(_hash)
+                return merge_or_checkout()
             elif _iftag: #checkout a tag to a new branch
                 exit_with_error("This feature is not supported, yet")
             else: # if i have to guess, i will try updating the repo
@@ -311,7 +312,9 @@ def GITStatus(srv, param):
     if _isremote: #comparing with the remote branch
         #_compare_str = get_remote_branch()
         # to compare with the REAL remote branch, instead of the local copy.
-        _compare_str = get_local(section = 'branch.%s.remote' % get_current_branch())
+        _remote = get_local('branch.%s.remote' % get_current_branch())
+        do_fetch(_remote)
+        _compare_str = _remote
     elif _ishash:
         _compare_str = select_hash_range()
     if _compare_str:#with comparison objects specified, use 'git diff'

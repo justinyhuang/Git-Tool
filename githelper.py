@@ -126,7 +126,7 @@ class ConfigItemMissing(GITError):
 #-------------------GLOBAL SETTINGS-------------------
 # Edit the following settings to make GITTool fits your need
 PROMPT_SIGN = ':> ' # unichr(0x263B) will show a smiling face.
-DEBUG = False
+DEBUG = True
 COLOR = True
 
 color = dict()
@@ -276,9 +276,12 @@ def make_status_header(ver1, ver2):
     return '[' + paint('red', ver1) + ']' + ' ==> ' +\
            '[' + paint('red', ver2) + ']'
 
-def merge_or_checkout():
+def merge_or_checkout(target, if_in_list):
     _ans = get_answer(prompt = "Merge or Checkout? [m/C]", default = 'c')
-    return 'm' if _ans == 'm' or _ans == 'M' else 'c'
+    if _ans == 'm' or _ans == 'M': #merge
+        return do_merge(target)
+    else: #checkout
+        return do_checkout_branch(target, if_in_list)
 
 #print message with a fixed length bar
 def make_msg_bar(msg):
@@ -612,6 +615,7 @@ def do_checkout_branch(selected_branch, in_list = True, isremote = False):
 
 def do_checkout_from_commit(ref):
     _new_branch = ''
+    ref = ref.strip(' \n\t')
     while not _new_branch: #force to input a name
         _new_branch = get_answer(prompt = "Give a name to the new branch")
     return invoke([git.checkout(target = ref, new_branch = _new_branch)])
