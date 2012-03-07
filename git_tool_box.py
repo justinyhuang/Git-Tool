@@ -26,7 +26,9 @@ from githelper import *
 from optparse import OptionParser
 
 """
+TODO: when a branch name is origin, we should not name the linked 'remote' section to 'origin'!!
 TODO: we need a solid config file to make sure git-tool is correctly working. fix potential issues.
+TODO: add functionality to support 'save' some files and keep other files uncommitted.
 TODO: add functionality to support checking out a file from specific hash (git checkout <file> <hash> might just do that)
 TODO: need to consider the situation when the tool is used without a network connection: we will need to skip the checking of remote branches/repo's
 TODO: add the path of git-tool bin directory to PATH and the path of git-tool python files to PYTHONPATH, in gitsetup
@@ -73,15 +75,14 @@ def GITSave(srv = '', param = ''):
         return '\npatch saved to %s/%s' % (_target_dir, _patch_file)
     else: #do a push or a commit
         if num_uncommited_files(): #there are changed files to commit
+            _msg = get_answer(prompt = 'Any comment? [empty comment is not allowed]')
+            _msg = '"' + _msg + '"'
             _ans=get_answer(prompt = 'Save to ' +\
                             paint('red', _current_branch) + ' ? [Y/n]',
                             default = 'y')
             if _ans == 'n' or _ans == 'N':
-                _branch_list, _selected_branch = select_branch()
-                do_checkout_branch(selected_branch = _selected_branch,
-                                   in_list = False)
-            _msg = get_answer(prompt = 'Any comment? [empty comment is not allowed]')
-            _msg = '"' + _msg + '"'
+                _branch_list, _branch = select_branch()
+                do_checkout_branch(selected_branch = _branch, in_list = False)
             invoke([git.commit(' -a -m %s' % _msg)])
             return "Done"
         else: # there is no changed files, try a push
@@ -129,29 +130,22 @@ def GITLoad(srv, param):
         if len(param) == 2: #something is provided as the parameter
             _in_branch_list = param[1] in get_branch_list()[1]
             if _ifbranch or _in_branch_list: #this is a local branch, or the user says so
-                print("loading branch %s ..." % paint('red', param[1]))
                 return merge_or_checkout(param[1], _in_branch_list)
             if _iftag: #user says it is a tag
-                print("loading tag %s ..." % paint('red', param[1]))
                 return do_checkout_from_commit(param[1])
             if _ifremote: #user says it is a remote branch
-                print("loading remote branch %s ..." % paint('red', param[1]))
-                #return do_checkout_from_commit(param[1])
                 return do_fetch(ref = param[1])
             #is this a remote branch?
             _remote_branch = is_remote_branch(param[1])
             if _remote_branch: #yes we find it
-                print("loading remote branch %s ..." % paint('red', param[1]))
                 return do_fetch(ref = param[1])
                 #return do_checkout_from_commit(_remote_branch.split('\t')[-1])
             #TODO: can we support merging from a remote branch?
             if os.path.isfile(param[1]): #this is a patch file
-                print("loading patch file %s ..." % paint('red', param[1]))
                 return do_apply(param[1])
             else: #the last possibility is...tag, try with fingers crossed...
                 _ans = get_answer(prompt = "Is %s a tag? [y/N]" % param[1])
                 if _ans == 'y' or _ans == 'Y':
-                    print("loading tag %s ..." % paint('red', param[1]))
                     return do_checkout_from_commit(param[1])
                 else:
                     exit_with_error("Don't know how to load [%s]" % param[1])
@@ -161,17 +155,14 @@ def GITLoad(srv, param):
                 #now we are in a no-branch state when the remote branch is checked out.
                 _branch_list, _branch = select_branch(_ifremote)
                 if _ifremote:# fetch from remote
-                    print("loading remote branch %s ..." % _branch);
                     return do_checkout_branch(selected_branch = _branch,
                                               in_list = _branch in _branch_list,
                                               isremote = _ifremote)
                 else: #it is a local branch
-                    print("loading branch %s ..." % _branch);
                     return merge_or_checkout(target = _branch,
                                              in_list = _branch in _branch_list)
             elif _ifhash: #checkout a hash to a new branch
                 _hash = select_hash()
-                print("loading hash %s ..." % _hash);
                 return merge_or_checkout(target = _hash, in_list = False)
             elif _iftag: #checkout a tag to a new branch
                 exit_with_error("This feature is not supported, yet")
@@ -450,7 +441,7 @@ def GITConfig(srv, param):
         _current_branch = get_current_branch()
         _current_branch_remote = get_local('branch.%s.remote' % _current_branch)
         _current_branch_merge = get_local('branch.%s.merge' % _current_branch)
-        _remote_branch = get_remote_branch()
+        _remote_branch = get_remote_branch(show_remote_path = True)
         _repo_url = get_remote_url()
     else:
         _current_branch = _current_branch_remote = \

@@ -114,9 +114,10 @@ class RefSourceBall(Ball):
 
 class GITError(Exception):
     """base class of all GitTool error exceptions"""
+    msg = """General Error. Sorry I don't have too much to say..."""
 
 class ConfigItemMissing(GITError):
-    """The item/section in the git config file does not exist"""
+    msg = """The item/section in the git config file does not exist"""
 
 #-------------------INTERNAL HELPPER FUNCTIONS-------------------
 #The internal helpper functions are used by the service functions.
@@ -142,7 +143,7 @@ def split(str, sep = None):
 #invoke bash commands
 def invoke(cmd, detached = False):
     if DEBUG == True: #for debug only
-        print(paint('yellow', ''.join(cmd)))
+        print('>>> %s <<<' % cmd[0])
     if detached is False:
         execution=subprocess.Popen(cmd,
                                    shell=True, stdin=subprocess.PIPE,
@@ -311,26 +312,22 @@ def make_branch(branch):
     _tmp = invoke([git.branch(branch = branch)]) #create branch with the name given
     _tmp = invoke([git.checkout(target = branch)])
     #new branch, set the config properly
-    set_branch_config(branch_to = branch, branch_from = _previous_branch)
+    copy_branch_config(branch_to = branch, branch_from = _previous_branch)
     _result = 'created and switched to new branch: ' + paint('red', branch) + '\n'
     _result += 'config is set based on ' + paint('red', _previous_branch)
     return _result
 
 #based on the remote and fetch values of the parent, set up the values for the new branch
-def make_branch_linked_to_ref(bname, ref, repo = ''):
-    _ref_local_copy = 'refs/remotes/' + ref[5:] #path to the local ref copy
-    _remote = get_local('branch.%s.remote' % get_current_branch())
+def link_branch_to_ref(bname, cur_branch, ref, local_ref, repo = ''):
+    _remote = get_local('branch.%s.remote' % cur_branch)
     _repo = repo if repo\
                  else get_local('remote.%s.url' % _remote)
-    _cmd = git.checkout(target = _ref_local_copy, new_branch = bname)
-    _tmp = invoke([_cmd])
-    _fetch = '+%s:%s' % (ref, _ref_local_copy)
+    _fetch = '+%s:%s' % (ref, local_ref)
     #set up a new remote section and a new branch section for this new branch
-    set_local(section = 'remote.%s.url' % bname, value = _repo)
-    set_local(section = 'remote.%s.fetch' % bname, value = _fetch)
-    set_local(section = 'branch.%s.remote' % bname, value = bname)
-    set_local(section = 'branch.%s.merge' % bname, value = _ref_local_copy)
-    return _tmp
+    set_local('remote.%s.url' % bname, value = _repo)
+    set_local('remote.%s.fetch' % bname, value = _fetch)
+    set_local('branch.%s.remote' % bname, value = bname)
+    set_local('branch.%s.merge' % bname, value = local_ref)
 
 def get_branches_with_commit(hash):
     _cmd = git.branch(contains = hash)
@@ -415,6 +412,9 @@ def delete_branch(branch, type):
                           help = "it is likely you have changes in the branch.\n" +
                                  "you can force deleting the branch, or quit.")
         if _ans == 'y' or _ans == 'Y':
+            #delete the corresponding config values
+            remove_local(section = 'branch.%s' % branch)
+            remove_local(section = 'remote.%s' % branch)
             return True, invoke([git.branch(force_del_branch = branch)])
         else:
             return False, 'branch %s is not deleted' % branch
@@ -428,7 +428,7 @@ def if_branch_exist(branch):
 
 #-------------------config helppers
 #set the config for a new branch
-def set_branch_config(branch_to, branch_from):
+def copy_branch_config(branch_to, branch_from):
     #check if the config is already there
     _read_remote = get_local('branch.%s.remote' % branch_to)
     _read_merge = get_local('branch.%s.merge' % branch_to)
@@ -461,13 +461,17 @@ def set_remote_url(url):
     set_local('remote.%s.url' % _remote, url)
 
 #get the remote branch, the merge value in the branch section
-def get_remote_branch():
+def get_remote_branch(show_remote_path = False):
     #get the name of the corresponding remote branch
     _current_branch = get_current_branch()
     _remote_branch = get_local('branch.%s.merge' % _current_branch)
     if not _remote_branch:# empty value is not acceptable
         raise ConfigItemMissing
-    return _remote_branch
+    if show_remote_path: # return the path in the remote repo
+        # skip the 'remotes' part
+        return _remote_branch[:5] + _remote_branch[13:]
+    else: # return the local copy path linked to the remote repo
+        return _remote_branch
 
 #set the remote branch, the merge value in the branch section
 def set_remote_branch(branch):
@@ -595,6 +599,7 @@ def do_checkout_branch(selected_branch, in_list = True, isremote = False):
     if isremote: #to 'checkout' a remote branch is to fetch and make the branch local
         _tmp = do_fetch(ref = selected_branch)
     elif in_list: #this is an existing branch
+        print("loading branch %s ..." % paint('red', selected_branch))
         _tmp = invoke([git.checkout(target = selected_branch)])
     else: #selected branch is not in the list
         _tmp = make_branch(selected_branch)
@@ -605,6 +610,7 @@ def do_checkout_from_commit(ref):
     ref = ref.strip(' \n\t')
     while not _new_branch: #force to input a name
         _new_branch = get_answer(prompt = "Give a name to the new branch")
+    print("loading %s ..." % paint('red', ref))
     return invoke([git.checkout(target = ref, new_branch = _new_branch)])
 
 def do_apply(file):
@@ -612,19 +618,26 @@ def do_apply(file):
     for line in _tmp.split('\n'):
         if 'does not apply' in line:
             exit_with_error("Loading the patch failed. Check the patch file")
+    print("loading patch file %s ..." % paint('red', file))
     return invoke([git.apply(file)])
 
 def do_fetch(url = None, ref = None):
     #TODO: check if we have network connected.
     if url: #this is only to update the local repo by fetch
+        print("updating ...")
         _result = invoke([git.fetch(url)])
     else: #to fetch a remote branch to local repo
         _bname = ref[ ref.rfind('/') + 1: ] #get the branch name
         _local_ref = ref.replace('refs/', 'refs/remotes/', 1)
-        _url = get_local('branch.%s.remote' % get_current_branch()) #assume the same url
+        _cur_branch = get_current_branch()
+        _url = get_local('branch.%s.remote' % _cur_branch) #assume the same url
+        print("loading remote branch %s ..." % paint('red', ref))
         _result = invoke([git.fetch(url = _url, src = ref, dst = _local_ref)])
         #make a branch tracking the ref, forcing the branch name to be the same as the remote
-        _result += make_branch_linked_to_ref(_bname, ref)
+        _local_ref = 'refs/remotes/' + ref[5:] #path to the local ref copy
+        _cmd = git.checkout(target = _local_ref, new_branch = _bname)
+        _result += invoke([_cmd])
+        link_branch_to_ref(_bname, _cur_branch, ref, _local_ref)
     return _result
 
 def do_clone():
@@ -642,7 +655,7 @@ def push_to_remote():
     #TODO: check if we have network connected.
     #TODO: code is missing to set up the configuration properly after push from a local branch
     _url = get_remote_url()
-    _ref = get_remote_branch()
+    _ref = get_remote_branch(show_remote_path = True)
     if _url is None:
         exit_with_error('config values are missing, you will need to manually fix this issue')
     else:
@@ -667,9 +680,9 @@ def push_to_remote():
                 add_to_source_list('ref', _ref)
             increment_count('url', _url)
             increment_count('ref', _ref)
+            pdb.set_trace()
             set_remote_branch(_ref)
     _cmd = git.push(repo = _url, branch = get_current_branch(), ref = _ref)
-    pdb.set_trace()
     return invoke([_cmd])
 
 #-------------------hash helppers
