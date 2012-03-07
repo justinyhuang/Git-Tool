@@ -68,16 +68,20 @@ def showref(branch = ''):
 def show(selection = '', param = '', file = ''):
     return 'git show %s %s %s' % (selection, param, file)
 
-def config(config = '', section = '', value = None):
-    if value: #set function
-        return 'git config --local %s "%s"' %(section, value) if config == 'local'\
-          else 'git config --global %s "%s"' %(section, value)
-    elif value == '': #unset the value
-        return 'git config --local --unset %s' % section if config == 'local'\
-          else 'git config --global --unset %s' % section
-    else: #get function
-        return 'git config --local %s' % section if config == 'local'\
-          else 'git config --global %s' % section
+def config(type = '', section = '', element = '', value = None):
+    if value: #set function to an element, you can't set value of a section, can you?
+        return 'git config --local %s "%s"' %(element, value) if type == 'local'\
+          else 'git config --global %s "%s"' %(element, value)
+    elif value == '': #remove a section, or an element
+        if element:
+            return 'git config --local --unset %s' % section if type == 'local'\
+              else 'git config --global --unset %s' % section
+        if section:
+            return 'git config --local --remove-section %s' % section if type == 'local'\
+              else 'git config --global --remove-section %s' % section
+    else: #get function, when value is None
+        return 'git config --local %s' % element if type == 'local'\
+          else 'git config --global %s' % element
 
 def revparse(hash = '', param = ''):
     return 'git rev-parse %s %s' % (hash, param)

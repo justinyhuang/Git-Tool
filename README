@@ -1,28 +1,26 @@
 Git, though powerful and popular, in most cases is too complicated to use. The command set is huge,
 the parameters are too many, the design is sophisticated and hense the learning period is too long.
-For a programmer who wants only a tool to manage his/her source code, to master Git and make it
-work requires too much learning. (I bet most of the Git users keep a ProGit or something similar
-on hand)
+For some one who wants only a tool to manage his/her source code or document, to master Git and
+make it work requires too much learning.
+(I bet most of the Git users keep a ProGit or something similar on hand)
 I have many questions since using Git:
     Why use different command for similar requests?
     Why type long command + parameters when the requirement is simple?
     What is 'stage' and why one has to understand this when all needed is to back up my changes?
 
 This is why GitTool is here.
-GitTool tries to simplify the use of git by wrapping git with a python script and by providing
-simple yet powerful interfaces to the user.
-To make using git a bit easier is what GitTool is for.
+GitTool tries to simplify the use of git providing simple yet powerful interfaces to the user.
+GitTool learns Git so you don't have to =)
 
 TARGET USER
 GitTool is specialized for those who need to use git everyday but don't like to master the tool.
 These users only need git to help managing changes of their work, as well as communicating with
-others based on the same repository and history. Spending time to know 1001 ways of using git is
-unacceptable for them.
+others via Git. Spending time to know 1001 ways of using git is unacceptable for them.
 
 FEATURES
 - Easy, short yet powerful commands. In most cases a GitTool command varies from 3 to 5 characters
   Very few arguments are required. Some examples are given below as comparison: (what Git command
-  will need to accomplish
+  will need to accomplish the same task?)
 
   To show changed but not commited files
   GitTool Command: gst
@@ -45,16 +43,16 @@ FEATURES
   To do a diff with vimdiff in a remote-connection, and meld in a local workstation, and bc3 when
   someone like to see it in bcompare
   GitTool Command: gdi/gdi2/gdi3
-  * what tool would gdi/gdi2/gdi3 use needs setting during installation of the tool
+  * tools used in gdi/gdi2/gdi3 are set during installation of the tool
 
   and many other use cases....
 
 - Graphic git history presentation. A slightly better graphical presentation compared to those by other tools like gitk.
   For example, to show a graphical version tree of the last 10 nodes, 'gifg 10' will show you the graph.
-  Powered by Graphviz and qiv =)
+  Powered by Graphviz and qiv.
 
 - Iterative mode. In many cases you will be give a list of branches/changed files/repositories.
-  You can manipulate branches/files/repositories easily, instead of being a Git Guru.
+  You can manipulate branches/files/repositories easily with a few key strokes.
 
 - View configuration similar to ClearCase. GitTool provides a means to select files from different commits/versions, yet with some version control capabilities. [to be implemented]
 
@@ -111,4 +109,6 @@ You can also put a '?' after the command to get the help message, which is equal
 
 I DONT LIKE IT
 'git_tool_box.py clean' will help you remove GitTool and recover your .gitconfig file.
-After that 'rm -fr <dir of GitTool>' and you won't see GitTool anymore. But...why?
+After that 'rm -fr <dir of GitTool>' and you won't see GitTool anymore.
+
+But...why?

@@ -123,35 +123,6 @@ class ConfigItemMissing(GITError):
 #Based on git direct call functions, the helpper functions fulfill certain git-tool sub features.
 #No direct git command calls will be made in these functions.
 
-#-------------------GLOBAL SETTINGS-------------------
-# Edit the following settings to make GITTool fits your need
-PROMPT_SIGN = ':> ' # unichr(0x263B) will show a smiling face.
-DEBUG = True
-COLOR = True
-
-color = dict()
-color['none'] = ''
-if COLOR:
-    color['red'] = '\033[01;31m'
-    color['green'] = '\033[01;32m'
-    color['yellow'] = '\033[01;33m'
-    color['blue'] = '\033[01;34m'
-    color['magenta'] = '\033[01;35m'
-    color['lightblue'] = '\033[01;36m'
-    color['white'] = '\033[01;37m'
-    color['gray'] = '\033[01;30m'
-    _end_ = '\033[00m'
-else:
-    color['red'] = ''
-    color['green'] = ''
-    color['yellow'] = ''
-    color['blue'] = ''
-    color['magenta'] = ''
-    color['lightblue'] = ''
-    color['white'] = ''
-    color['gray'] = ''
-    _end_ = ''
-
 def paint(text_color, str):
     return color[text_color] + str + _end_
 
@@ -276,12 +247,12 @@ def make_status_header(ver1, ver2):
     return '[' + paint('red', ver1) + ']' + ' ==> ' +\
            '[' + paint('red', ver2) + ']'
 
-def merge_or_checkout(target, if_in_list):
+def merge_or_checkout(target, in_list):
     _ans = get_answer(prompt = "Merge or Checkout? [m/C]", default = 'c')
     if _ans == 'm' or _ans == 'M': #merge
         return do_merge(target)
     else: #checkout
-        return do_checkout_branch(target, if_in_list)
+        return do_checkout_branch(target, in_list)
 
 #print message with a fixed length bar
 def make_msg_bar(msg):
@@ -339,25 +310,26 @@ def make_branch(branch):
     _previous_branch = get_current_branch()
     _tmp = invoke([git.branch(branch = branch)]) #create branch with the name given
     _tmp = invoke([git.checkout(target = branch)])
-    set_branch_config(branch_from = _previous_branch) #new branch, set the config properly
+    #new branch, set the config properly
+    set_branch_config(branch_to = branch, branch_from = _previous_branch)
     _result = 'created and switched to new branch: ' + paint('red', branch) + '\n'
     _result += 'config is set based on ' + paint('red', _previous_branch)
     return _result
 
 #based on the remote and fetch values of the parent, set up the values for the new branch
 def make_branch_linked_to_ref(bname, ref, repo = ''):
-    _ref = ref[5:] #skip the 'refs/'
-    _remote = get_local(section = 'branch.%s.remote' % get_current_branch())
+    _ref_local_copy = 'refs/remotes/' + ref[5:] #path to the local ref copy
+    _remote = get_local('branch.%s.remote' % get_current_branch())
     _repo = repo if repo\
-                 else get_local(section = 'remote.%s.url' % _remote)
-    _cmd = git.checkout(target = _ref, new_branch = bname)
+                 else get_local('remote.%s.url' % _remote)
+    _cmd = git.checkout(target = _ref_local_copy, new_branch = bname)
     _tmp = invoke([_cmd])
-    _fetch = '+refs/' + _ref + ':refs/remotes/' + _ref
+    _fetch = '+%s:%s' % (ref, _ref_local_copy)
     #set up a new remote section and a new branch section for this new branch
     set_local(section = 'remote.%s.url' % bname, value = _repo)
     set_local(section = 'remote.%s.fetch' % bname, value = _fetch)
     set_local(section = 'branch.%s.remote' % bname, value = bname)
-    set_local(section = 'branch.%s.merge' % bname, value = ref)
+    set_local(section = 'branch.%s.merge' % bname, value = _ref_local_copy)
     return _tmp
 
 def get_branches_with_commit(hash):
@@ -433,6 +405,9 @@ def delete_branch(branch, type):
        _cmd = git.branch(del_branch = branch)
     _tmp = invoke([_cmd])
     if _tmp.startswith(('Deleted', 'warning:')):
+        #delete the corresponding config values
+        remove_local(section = 'branch.%s' % branch)
+        remove_local(section = 'remote.%s' % branch)
         return True, _tmp
     elif 'is not fully merged' in _tmp: #check if we should try with -D
         _ans = get_answer(prompt = "%s is not fully merged. Delete it anyway? [y/N]" % branch,
@@ -453,18 +428,22 @@ def if_branch_exist(branch):
 
 #-------------------config helppers
 #set the config for a new branch
-def set_branch_config(branch_from):
+def set_branch_config(branch_to, branch_from):
     #check if the config is already there
-    _cur_branch = get_current_branch()
-    _read_remote = get_local('branch.%s.remote' % _cur_branch)
-    _read_merge = get_local('branch.%s.merge' % _cur_branch)
-    if _read_merge is None or _read_remote is None:
+    _read_remote = get_local('branch.%s.remote' % branch_to)
+    _read_merge = get_local('branch.%s.merge' % branch_to)
+    #set the config values if they are not set properly
+    if not (_read_merge and _read_remote):
         #read the values from the parent branch
         _parent_remote = get_local('branch.%s.remote' % branch_from)
+        _parent_url = get_local('remote.%s.url' % _parent_remote)
+        _parent_fetch = get_local('remote.%s.fetch' % _parent_remote)
         _parent_merge = get_local('branch.%s.merge' % branch_from)
         #set the values of the current branch
-        set_local('branch.%s.remote' % _cur_branch, _parent_remote)
-        set_local('branch.%s.merge' % _cur_branch, _parent_merge)
+        set_local('branch.%s.merge' % branch_to, _parent_merge)
+        set_local('branch.%s.remote' % branch_to, branch_to)
+        set_local('remote.%s.url' % branch_to, _parent_url)
+        set_local('remote.%s.fetch' % branch_to, _parent_fetch)
 
 #get the url of the corresponding remote repository
 def get_remote_url():
@@ -485,29 +464,37 @@ def set_remote_url(url):
 def get_remote_branch():
     #get the name of the corresponding remote branch
     _current_branch = get_current_branch()
-    _remote_branch = get_local(section = 'branch.%s.merge' % _current_branch)
-    return _remote_branch if _remote_branch else ''
+    _remote_branch = get_local('branch.%s.merge' % _current_branch)
+    if not _remote_branch:# empty value is not acceptable
+        raise ConfigItemMissing
+    return _remote_branch
 
 #set the remote branch, the merge value in the branch section
 def set_remote_branch(branch):
-    set_local('branch.%s.remote' % get_current_branch(), branch)
+    set_local('branch.%s.merge' % get_current_branch(), branch)
 
 #command to get local git config value
-def get_local(section):
-    _tmp = invoke([git.config(config = 'local', section = section)])
+def get_local(element):
+    _tmp = invoke([git.config(type = 'local', element = element)])
     return None if _tmp is None else _tmp[:-1]
 
-def set_local(section, value):
-    _tmp = invoke([git.config(config = 'local', section = section, value = value)])
+def set_local(element, value):
+    _tmp = invoke([git.config(type = 'local', element = element, value = value)])
 
 #command to get global git config value
-def get_global(section):
-    _tmp = invoke([git.config(config = 'global', section = section)])
+def get_global(element):
+    _tmp = invoke([git.config(type = 'global', element = element)])
     return None if _tmp is None else _tmp[:-1]
 
 #command to set global git config value
-def set_global(section, value):
-    _tmp = invoke([git.config(config = 'global', section = section, value = value)])
+def set_global(element, value):
+    _tmp = invoke([git.config(type = 'global', element = element, value = value)])
+
+def remove_global(section):
+    _tmp = invoke([git.config(type = 'global', section = section)])
+
+def remove_local(section):
+    _tmp = invoke([git.config(type = 'local', section = section, value = '')])
 
 #-------------------functional blocks
 def do_log(range, format):
@@ -606,7 +593,7 @@ def do_merge(from_ref, to_ref = None):
 #checkout a branch, or make a new branch and then check it out
 def do_checkout_branch(selected_branch, in_list = True, isremote = False):
     if isremote: #to 'checkout' a remote branch is to fetch and make the branch local
-        _tmp = do_fetch(selected_branch)
+        _tmp = do_fetch(ref = selected_branch)
     elif in_list: #this is an existing branch
         _tmp = invoke([git.checkout(target = selected_branch)])
     else: #selected branch is not in the list
@@ -627,14 +614,17 @@ def do_apply(file):
             exit_with_error("Loading the patch failed. Check the patch file")
     return invoke([git.apply(file)])
 
-def do_fetch(ref):
+def do_fetch(url = None, ref = None):
     #TODO: check if we have network connected.
-    _bname = ref[ ref.rfind('/') + 1: ] #get the branch name
-    _local_ref = ref.replace('refs/', 'refs/remotes/', 1)
-    _url = get_local(section = 'branch.%s.remote' % get_current_branch()) #assume the same url
-    _result = invoke([git.fetch(url = _url, src = ref, dst = _local_ref)])
-    #make a branch tracking the ref, forcing the branch name to be the same as the remote
-    _result += make_branch_linked_to_ref(_bname, ref)
+    if url: #this is only to update the local repo by fetch
+        _result = invoke([git.fetch(url)])
+    else: #to fetch a remote branch to local repo
+        _bname = ref[ ref.rfind('/') + 1: ] #get the branch name
+        _local_ref = ref.replace('refs/', 'refs/remotes/', 1)
+        _url = get_local('branch.%s.remote' % get_current_branch()) #assume the same url
+        _result = invoke([git.fetch(url = _url, src = ref, dst = _local_ref)])
+        #make a branch tracking the ref, forcing the branch name to be the same as the remote
+        _result += make_branch_linked_to_ref(_bname, ref)
     return _result
 
 def do_clone():
@@ -664,19 +654,22 @@ def push_to_remote():
             _urls = get_source_list('url')
             _ball = UrlSourceBall(_urls)
             _url = get_answer(prompt = 'Select a URL to push', ball = _ball)
-            if _url not in _urls: #user type in a new item that is not in the ball list
+            if _url not in [x.split()[0] for x in _urls]:
+                #user type in a new item that is not in the ball list, remember it
                 add_to_source_list('url', _url)
             set_remote_url(_url)
             #choose or specify a REF
             _refs = get_source_list('ref')
             _ball = RefSourceBall(_refs)
             _ref = get_answer(prompt = 'Select a REF to push', ball = _ball)
-            if _ref not in _refs: #user type in a new item that is not in the ball list
+            if _ref not in [x.split()[0] for x in _refs]:
+                #user type in a new item that is not in the ball list
                 add_to_source_list('ref', _ref)
-            increment('url', _url)
-            increment('ref', _ref)
+            increment_count('url', _url)
+            increment_count('ref', _ref)
             set_remote_branch(_ref)
     _cmd = git.push(repo = _url, branch = get_current_branch(), ref = _ref)
+    pdb.set_trace()
     return invoke([_cmd])
 
 #-------------------hash helppers
@@ -781,11 +774,11 @@ def add_to_source_list(type, item):
 #increment the count of a source item
 def increment_count(type, item):
     _len = get_source_list_len(type)
-    for i in range(_len):
+    for i in range(1, _len + 1):
         _tmp = get_global('sourcelist.%s.item%d' % (type, i))
         if _tmp.split()[0] == item: # find the matching item
             set_global('sourcelist.%s.item%d' % (type, i),
-                       '%s %d' % (item, str(_tmp.split()[1]) + 1))
+                       '%s %d' % (item, int(_tmp.split()[1]) + 1))
             return
     exit_with_error("Something is wrong: can't find the souce item!")
 
@@ -838,5 +831,34 @@ def remove_link_file(x):
     _fullpath = sys.argv[0]
     _dir = _fullpath[:_fullpath.rfind('/') + 1]
     invoke(['rm %s' % (_dir + x)])
+
+#-------------------GLOBAL SETTINGS-------------------
+# Edit the following settings to make GITTool fits your need
+PROMPT_SIGN = ':> ' # unichr(0x263B) will show a smiling face.
+DEBUG = False
+COLOR = True if get_global('GitTool.ColorSupport') == 'yes' else False
+
+color = dict()
+color['none'] = ''
+if COLOR:
+    color['red'] = '\033[01;31m'
+    color['green'] = '\033[01;32m'
+    color['yellow'] = '\033[01;33m'
+    color['blue'] = '\033[01;34m'
+    color['magenta'] = '\033[01;35m'
+    color['lightblue'] = '\033[01;36m'
+    color['white'] = '\033[01;37m'
+    color['gray'] = '\033[01;30m'
+    _end_ = '\033[00m'
+else:
+    color['red'] = ''
+    color['green'] = ''
+    color['yellow'] = ''
+    color['blue'] = ''
+    color['magenta'] = ''
+    color['lightblue'] = ''
+    color['white'] = ''
+    color['gray'] = ''
+    _end_ = ''
 
 
