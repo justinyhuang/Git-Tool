@@ -469,7 +469,10 @@ def get_remote_branch(show_remote_path = False):
         raise ConfigItemMissing
     if show_remote_path: # return the path in the remote repo
         # skip the 'remotes' part
-        return _remote_branch[:5] + _remote_branch[13:]
+        if _remote_branch.startswith('refs/remotes'):
+            return _remote_branch[:5] + _remote_branch[13:]
+        else:
+            return _remote_branch
     else: # return the local copy path linked to the remote repo
         return _remote_branch
 
