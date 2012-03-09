@@ -1,6 +1,7 @@
 import gitcommand as git
 import subprocess
 import pdb
+import os
 import sys
 import re
 
@@ -67,7 +68,7 @@ class FileBall(Ball):
             if item.strip().startswith('??'): #not in git's control
                 #add the file into git
                 _file = item[item.rfind(' ') + 1:]
-                invoke([git.add(_file)])
+                invoke(git.add(_file))
                 self.list[i] = re.sub('\?\?', 'A_', self.list[i])
     def delete(self, item_list):
         super(FileBall, self).delete(item_list, revert_file_item)
@@ -150,9 +151,9 @@ def split(str, sep = None):
 #invoke bash commands
 def invoke(cmd, detached = False):
     if DEBUG == True: #for debug only
-        print('>>> %s <<<' % cmd[0])
+        print('>>> %s <<<' % cmd)
     if detached is False:
-        execution=subprocess.Popen(cmd,
+        execution=subprocess.Popen([cmd],
                                    shell=True, stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         o=execution.communicate()
@@ -161,7 +162,7 @@ def invoke(cmd, detached = False):
         if o[0]: #only return the std result, when there is no error
             return o[0]
     else: #invoke bash commands in separate process, no error return
-        subprocess.Popen(cmd, stderr=subprocess.PIPE)
+        subprocess.Popen([cmd], stderr=subprocess.PIPE)
     return ""
 
 def get_indexes(line, operator = ''):
@@ -210,7 +211,7 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
         elif _ans.startswith('/a '):
             if ball is None:
                 eNoBallFound.throw()
-            _a_list = get_indexes(operator = '\a ', line = _ans)
+            _a_list = get_indexes(operator = '/a ', line = _ans)
             if _a_list:
                 ball.add(_a_list)
             else:
@@ -225,7 +226,7 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
                 _items = []
                 for i in _list:
                     _items.append(ball[i])
-                return _items if len(_items) > 1 else _items[0]
+                return _items
             elif _ans or default: #this is a non-empty input, or default is set to allow direct Enter
                 return _ans if _ans else default
 
@@ -322,12 +323,12 @@ def select_branch(isremote = False):
                       ball = _listball, hl = _curbranch)
     if _ans == '/e': #user enters nothing, might think of quit
         exit()
-    return _branch_list, _ans
+    return _branch_list, _ans[0]
 
 def make_branch(branch):
     _previous_branch = get_current_branch()
-    _tmp = invoke([git.branch(branch = branch)]) #create branch with the name given
-    _tmp = invoke([git.checkout(target = branch)])
+    _tmp = invoke(git.branch(branch = branch)) #create branch with the name given
+    _tmp = invoke(git.checkout(target = branch))
     #new branch, set the config properly
     copy_branch_config(branch_to = branch, branch_from = _previous_branch)
     _result = 'created and switched to new branch: ' + paint('red', branch) + '\n'
@@ -348,7 +349,7 @@ def link_branch_to_ref(bname, cur_branch, ref, local_ref, repo = ''):
 
 def get_branches_with_commit(hash):
     _cmd = git.branch(contains = hash)
-    return [x.strip(' *') for x in split(invoke([_cmd]), '\n') if x]
+    return [x.strip(' *') for x in split(invoke(_cmd), '\n') if x]
 
 def update_local_branch():
     #1. fetch the updates from remote repo
@@ -357,7 +358,7 @@ def update_local_branch():
     _merge = get_local('branch.%s.merge' % _current_branch)
     if _remote and _merge: #only initiate fetch when the config values are correct
         print("fetching from %s ..." % _remote)
-        print(invoke([git.fetch()]))
+        print(invoke(git.fetch()))
     else: #quit if the corresponding config items are not set
         exit_with_error('There are item or section missing in the config file')
     #2. ask for option
@@ -379,7 +380,7 @@ def update_local_branch():
 #get a branch list. returns <master branch index>, <branch list>
 def get_branch_list(isremote = False):
     _cmd = git.branch(lsoption = '-r' if isremote else '')
-    _branches = split(invoke([_cmd]), '\n')
+    _branches = split(invoke(_cmd), '\n')
     if _branches is None:
         exit_with_error("seems like there is no branch available...")
     _index = 0
@@ -395,13 +396,13 @@ def get_branch_list(isremote = False):
 
 #based on git branch, to get the current git branch
 def get_current_branch():
-    _first_line = split(invoke([git.status()]), '\n')[0]
+    _first_line = split(invoke(git.status()), '\n')[0]
     return split(_first_line)[-1] #last word of the first line is the branch name
 
 def is_remote_branch(b):
     #TODO: check if we have network connected.
     _url = get_remote_url()
-    return invoke([git.lsremote(_url, b)])
+    return invoke(git.lsremote(_url, b))
 
 #delete a branch
 def delete_branch(branch, type):
@@ -417,7 +418,7 @@ def delete_branch(branch, type):
        if branch == get_current_branch():
            return False, 'current branch %s cannot be deleted' % branch
        _cmd = git.branch(del_branch = branch)
-    _tmp = invoke([_cmd])
+    _tmp = invoke(_cmd)
     if _tmp.startswith(('Deleted', 'warning:')):
         #delete the corresponding config values
         remove_local(section = 'branch.%s' % branch)
@@ -432,7 +433,7 @@ def delete_branch(branch, type):
             #delete the corresponding config values
             remove_local(section = 'branch.%s' % branch)
             remove_local(section = 'remote.%s' % branch)
-            return True, invoke([git.branch(force_del_branch = branch)])
+            return True, invoke(git.branch(force_del_branch = branch))
         else:
             return False, 'branch %s is not deleted' % branch
     else: # what else is missing?
@@ -440,7 +441,7 @@ def delete_branch(branch, type):
 
 #my way to figure out if a branch exist, returns False when a hash is given
 def if_branch_exist(branch):
-    _tmp = invoke([git.showref(branch = branch)])
+    _tmp = invoke(git.showref(branch = branch))
     return _tmp is not None
 
 #-------------------config helppers
@@ -499,42 +500,65 @@ def set_remote_branch(branch):
 
 #command to get local git config value
 def get_local(element):
-    _tmp = invoke([git.config(type = 'local', element = element)])
+    _tmp = invoke(git.config(type = 'local', element = element))
     return None if _tmp is None else _tmp[:-1]
 
 def set_local(element, value):
-    _tmp = invoke([git.config(type = 'local', element = element, value = value)])
+    _tmp = invoke(git.config(type = 'local', element = element, value = value))
 
 #command to get global git config value
 def get_global(element):
-    _tmp = invoke([git.config(type = 'global', element = element)])
+    _tmp = invoke(git.config(type = 'global', element = element))
     return None if _tmp is None else _tmp[:-1]
 
 #command to set global git config value
 def set_global(element, value):
-    _tmp = invoke([git.config(type = 'global', element = element, value = value)])
+    _tmp = invoke(git.config(type = 'global', element = element, value = value))
 
 def remove_global(section):
-    _tmp = invoke([git.config(type = 'global', section = section)])
+    _tmp = invoke(git.config(type = 'global', section = section))
 
 def remove_local(section):
-    _tmp = invoke([git.config(type = 'local', section = section, value = '')])
+    _tmp = invoke(git.config(type = 'local', section = section, value = ''))
 
 #-------------------functional blocks
+def do_status(isremote = False, ishash = False, isdir = False, compare_str = ''):
+    _cmds, status = list(), ''
+    if isremote: #comparing with the remote branch
+        #first fetch the latest copy, and compare locally
+        print("comparing with the remote repository, please wait...")
+        _remote = get_local('branch.%s.remote' % get_current_branch())
+        do_fetch(url = _remote)
+        compare_str = get_remote_branch()
+    elif ishash:
+        compare_str = select_hash_range()
+    if compare_str:#with comparison objects specified, use 'git diff'
+        for t in 'ACDMRTUXB':#diff with different diff filter to get the change's type
+            _cmds.append(git.diff(selection = compare_str, type = t))
+    else:# without comparison objects specified, use 'git status'
+        _cmds.append(git.status(param = '-s'))
+    for c in _cmds:
+        if isdir: #only show the touched files in the current directory
+            c += ' -- ' + os.getcwd()
+        _tmp = invoke(c)
+        _tmp = translate_status_code(c, _tmp)
+        status += _tmp[:_tmp.rfind('\n')] + '\n' if _tmp else ''
+    return status, compare_str
+
 def do_log(range, format):
-    return invoke([git.log(hash = range, format = format, param = '--date=short')])
+    return invoke(git.log(hash = range, format = format, param = '--date=short'))
 
 def do_log_tag(range):
     _cmd = git.log(hash = range, format = '%ad|%an|%h|%s|%d',
                    param = '--abbrev-commit --date=short')
-    _logs = split(invoke([_cmd]), '\n')[:-1]
+    _logs = split(invoke(_cmd), '\n')[:-1]
     _result = ''
     for _line in _logs:
         [_date, _author, _hash, _comment, _tmp] =\
                 _line.split('|') if _line else ['', '', '', '', '']
         _tmp = split(_tmp.strip(' ()'), ', ')
         _branch = get_branches_with_commit(_hash)
-        _container_tags = invoke(["git tag --contains %s" % _hash])
+        _container_tags = invoke("git tag --contains %s" % _hash)
         _container_tags = split(_container_tags, '\n')
         if _container_tags:
             #the hash has tags attached, get the tags on this specific hash
@@ -559,8 +583,8 @@ def do_log_author_or_date(ifauthor, ifdate, format, range, author):
             _options += ' --before="%s"' % _d_end
     if ifauthor: #get the logs only with the given author name
         _options += ' --author=%s' % author
-    return invoke([git.log(hash = range, format = format,
-                           param = '--date=short %s' % _options)])
+    return invoke(git.log(hash = range, format = format,
+                           param = '--date=short %s' % _options))
 
 _dot_file = '/tmp/gittool.dotty.tmp'
 _svg_file = '/tmp/gittool.dotty.svg'
@@ -577,7 +601,7 @@ def do_log_graphic(num, hash_from, hash_to):
                             <TR><TD>%cd</TD></TR>
                             </TABLE>>]\n"%h":f0 -> {%p}
               """
-    _result = invoke([git.log(hash = _range, format = _format, param = '--date=short')])
+    _result = invoke(git.log(hash = _range, format = _format, param = '--date=short'))
     #link hashes with arrows
     _result = re.sub('"[a-f0-9]{7}":f0 -> \{[ a-f0-9]+\}', build_merge_arrows, _result)
     _result = 'digraph G{\nnode [shape=plaintext]\n'\
@@ -588,27 +612,27 @@ def do_log_graphic(num, hash_from, hash_to):
     _result = re.sub('BGCOLOR="bisque">', fill_commit_index, _result)
     with open(_dot_file, 'w') as f:
         f.write(_result)
-    _tmp = invoke(['dot -Tsvg %s > %s' % (_dot_file, _svg_file)])
-    _cmd = ['qiv', _svg_file]
+    _tmp = invoke('dot -Tsvg %s > %s' % (_dot_file, _svg_file))
+    _cmd = 'qiv ' + _svg_file
     return invoke(_cmd, detached=True) #feed the data to dotty
 
 def do_rebase(from_ref):
     print("rebasing from %s ..." % from_ref)
-    return invoke([git.rebase()])
+    return invoke(git.rebase())
 
 #merge branch, assuming frombr and tobr are valid branches
 def do_merge(from_ref, to_ref = None):
     if not to_ref:
         to_ref = get_current_branch()
     #first check if the from ref is on the same branch of to_ref
-    _refs = invoke([git.branch(contains = from_ref)]).split('\n')
+    _refs = invoke(git.branch(contains = from_ref)).split('\n')
     for r in _refs:
         if to_ref == r.strip(' *'):
             exit_with_error("I cannot merge %s to %s" % (from_ref, to_ref))
     print("merging from %s ..." % from_ref)
     if to_ref:#we need to first switch to the to ref
-        invoke([git.checkout(target = to_ref)]) #switch to the target branch
-    _tmp = invoke([git.merge(from_ref)]) #try auto merge
+        invoke(git.checkout(target = to_ref)) #switch to the target branch
+    _tmp = invoke(git.merge(from_ref)) #try auto merge
     if 'Automatic merge failed' in _tmp: #need manual merge
         os.system(git.mergetool())
         _tmp = 'Done'
@@ -620,14 +644,14 @@ def do_checkout_branch(selected_branch, in_list = True, isremote = False):
         _tmp = do_fetch(ref = selected_branch)
     elif in_list: #this is an existing branch
         print("loading branch %s ..." % paint('red', selected_branch))
-        _tmp = invoke([git.checkout(target = selected_branch)])
+        _tmp = invoke(git.checkout(target = selected_branch))
     else: #selected branch is not in the list
         _tmp = make_branch(selected_branch)
     return _tmp
 
 def do_checkout_file_from_commit(files, hash):
     for f in files:
-        invoke([git.checkout(target = '%s %s' % (hash, f))])
+        invoke(git.checkout(target = '%s %s' % (hash, f)))
 
 def do_checkout_from_commit(ref):
     _new_branch = ''
@@ -635,32 +659,58 @@ def do_checkout_from_commit(ref):
     while not _new_branch: #force to input a name
         _new_branch = get_answer(prompt = "Give a name to the new branch")
     print("loading %s ..." % paint('red', ref))
-    return invoke([git.checkout(target = ref, new_branch = _new_branch)])
+    return invoke(git.checkout(target = ref, new_branch = _new_branch))
+
+def do_patch(hash_str, patch_file):
+    if not hash_str:
+        _file_list, hash_str = get_hash_change()
+        print(_file_list)
+        _ans = get_answer(prompt = 'Patch the change in these files? [y/N]', default = 'n')
+        if _ans is 'N' or _ans is 'n':
+            exit()
+    _tmp = invoke(git.patch(selection = hash_str, patch_file = patch_file))
+    _ans = get_answer(prompt = 'where to store %s ?' % patch_file)
+    _target_dir=os.path.expanduser(_ans)
+    if not os.path.isdir(_target_dir):#directory doesn't exist, try to make one
+        os.makedirs(_target_dir)
+    invoke('mv %s %s' % (patch_file, _target_dir))
+    return '\npatch saved to %s/%s' % (_target_dir, patch_file)
+
+def do_commit(msg, files_to_save = None):
+    if files_to_save: #to save some of the changed files
+        files_to_save = [x.split()[1] for x in files_to_save]
+        print('\n'.join(files_to_save))
+        _ans = get_answer(prompt = "save the files above? [y/N]", default = 'n')
+        if _ans == 'y' or _ans == 'Y':
+            _files_str = ' '.join(files_to_save)
+            invoke(git.commit(' %s -m "%s"' % (_files_str, msg)))
+    else:
+        invoke(git.commit(' -a -m "%s"' % msg))
 
 def do_apply(file):
-    _tmp = invoke([git.apply(file, check = True)])
+    _tmp = invoke(git.apply(file, check = True))
     for line in _tmp.split('\n'):
         if 'does not apply' in line:
             exit_with_error("Loading the patch failed. Check the patch file")
     print("loading patch file %s ..." % paint('red', file))
-    return invoke([git.apply(file)])
+    return invoke(git.apply(file))
 
 def do_fetch(url = None, ref = None):
     #TODO: check if we have network connected.
     if url: #this is only to update the local repo by fetch
         print("updating ...")
-        _result = invoke([git.fetch(url)])
+        _result = invoke(git.fetch(url))
     else: #to fetch a remote branch to local repo
         _bname = ref[ ref.rfind('/') + 1: ] #get the branch name
         _local_ref = ref.replace('refs/', 'refs/remotes/', 1)
         _cur_branch = get_current_branch()
         _url = get_local('branch.%s.remote' % _cur_branch) #assume the same url
         print("loading remote branch %s ..." % paint('red', ref))
-        _result = invoke([git.fetch(url = _url, src = ref, dst = _local_ref)])
+        _result = invoke(git.fetch(url = _url, src = ref, dst = _local_ref))
         #make a branch tracking the ref, forcing the branch name to be the same as the remote
         _local_ref = 'refs/remotes/' + ref[5:] #path to the local ref copy
         _cmd = git.checkout(target = _local_ref, new_branch = _bname)
-        _result += invoke([_cmd])
+        _result += invoke(_cmd)
         link_branch_to_ref(_bname, _cur_branch, ref, _local_ref)
     return _result
 
@@ -668,11 +718,11 @@ def do_clone():
     #TODO: check if we have network connected.
     _urls = get_source_list('url')
     _ball = UrlSourceBall(_urls)
-    _url = get_answer(prompt = 'Pick a source to clone from', ball = _ball)
+    _url = get_answer(prompt = 'Pick a source to clone from', ball = _ball)[0]
     if _url not in [x.split()[0] for x in _urls]: #user type in a new item
         add_to_source_list('url', _url)
     print("Cloning %s ..." % _url)
-    invoke([git.clone(_url)])
+    invoke(git.clone(_url))
     return "Done"
 
 def push_to_remote():
@@ -690,7 +740,7 @@ def push_to_remote():
             #choose or specify a URL
             _urls = get_source_list('url')
             _ball = UrlSourceBall(_urls)
-            _url = get_answer(prompt = 'Select a URL to push', ball = _ball)
+            _url = get_answer(prompt = 'Select a URL to push', ball = _ball)[0]
             if _url not in [x.split()[0] for x in _urls]:
                 #user type in a new item that is not in the ball list, remember it
                 add_to_source_list('url', _url)
@@ -698,7 +748,7 @@ def push_to_remote():
             #choose or specify a REF
             _refs = get_source_list('ref')
             _ball = RefSourceBall(_refs)
-            _ref = get_answer(prompt = 'Select a REF to push', ball = _ball)
+            _ref = get_answer(prompt = 'Select a REF to push', ball = _ball)[0]
             if _ref not in [x.split()[0] for x in _refs]:
                 #user type in a new item that is not in the ball list
                 add_to_source_list('ref', _ref)
@@ -706,13 +756,13 @@ def push_to_remote():
             increment_count('ref', _ref)
             set_remote_branch(_ref)
     _cmd = git.push(repo = _url, branch = get_current_branch(), ref = _ref)
-    return invoke([_cmd])
+    return invoke(_cmd)
 
 #-------------------hash helppers
 #take two hashes and return a valid hash string based on the age of the hashes
 def ordered_hash_string(h1, h2):
-    _birthday1 = invoke([git.log(hash = h1, num = 1, format = '%ct')])
-    _birthday2 = invoke([git.log(hash = h2, num = 1, format = '%ct')])
+    _birthday1 = invoke(git.log(hash = h1, num = 1, format = '%ct'))
+    _birthday2 = invoke(git.log(hash = h2, num = 1, format = '%ct'))
     if int(_birthday1) > int(_birthday2): #h1 is younger than h2
         return '%s..%s' % (h2, h1)
     else:
@@ -730,13 +780,13 @@ def select_hash(since = 7, until = 0):
         _ball = HashBall(_tmp.split('|\n')[:-1])
         _ans = get_answer(title = ' Hash List ', default = 'more', ball = _ball,
                           help = '   Enter directly or "more" for more hashes, or\n' +
-                                 '   "more <ID>" for further details of the hash, or\n')
+                                 '   "more <ID>" for further details of the hash, or\n')[0]
         if _ans == 'more':
             until = since
             since += _group_size
         elif _ans.startswith('more'):
             _index = int(split(_ans)[-1])
-            print(invoke([git.log(hash = _ball[_index], num = 1)]))
+            print(invoke(git.log(hash = _ball[_index], num = 1)))
             raw_input('Press Enter to continue...')
         else:
             return _ans
@@ -756,27 +806,28 @@ def select_hash_range(with_current_hash = False, with_previous_hash = False):
     return ordered_hash_string(_base_hash, _current_hash)
 
 #get file differences between two hashes
-def get_hash_change(with_previous_hash = False):
-    _hash_str = select_hash_range(with_previous_hash)
+def get_hash_change(with_current_hash = False, with_previous_hash = False):
+    _hash_str = select_hash_range(with_current_hash = with_current_hash,
+                                  with_previous_hash = with_previous_hash)
     #list all changed files
-    _file_list = invoke([git.diff(selection = _hash_str)])
+    _file_list = invoke(git.diff(selection = _hash_str))
     return _file_list.strip(' \n'), _hash_str
 
 #get the current hash string
 def get_hashes(num):
-    _hash_str = invoke([git.log(num = num, format = '%h')])
+    _hash_str = invoke(git.log(num = num, format = '%h'))
     return split(_hash_str, '\n')[:-1] #get rid of the last empty line
 
 #check if a hash exists
 def if_hash_exist(ver):
-    _tmp = invoke([git.revparse(hash = ver)])
+    _tmp = invoke(git.revparse(hash = ver))
     return not re.search('unknown revision', _tmp)
 
 #-------------------path helppers
 #get the root path of the current repository
 def root_path():
-    _tmp = invoke([git.revparse(param = '--show-toplevel')])
-    return None if 'Not a git repository' in _tmp else _tmp
+    _tmp = invoke(git.revparse(param = '--show-toplevel'))
+    return None if 'Not a git repository' in _tmp else _tmp.strip(' \n')
 
 #check if we are at a git repository
 def check_git_path():
@@ -829,7 +880,7 @@ def increment_count(type, item):
 def number_of_changed_files(_hashes = '', _remote_branch = '', _file = ''):
     if _file:
         return 1
-    _tmp = invoke([git.diff(selection = _hashes if _hashes else _remote_branch)])
+    _tmp = invoke(git.diff(selection = _hashes if _hashes else _remote_branch))
     return len(split(_tmp, '\n')) - 1
 
 #return list of changed files and a list of untracked files from the output of 'git status -s'
@@ -846,7 +897,7 @@ def get_changed_files(str):
 
 #return the number of changed but not commited files
 def num_uncommited_files():
-    _tmp = invoke([git.status(param = '-s -uno')])
+    _tmp = invoke(git.status(param = '-s -uno'))
     _tmp = split(_tmp, '\n')
     return len(_tmp)
 
@@ -855,13 +906,13 @@ def revert_file_item(item, unused):
     _file = item[item.rfind(' ') + 1:] #get the real file name
     _remove_from_list = False
     if re.search('^_[MD]', item):    #not updated
-        invoke([git.checkout(target = _file)])
+        invoke(git.checkout(target = _file))
     elif re.search('^[MARCD]_', item): #index and worktree are the same, need to reset first
-        invoke([git.reset(file = _file)])
-        invoke([git.checkout(target = _file)])
+        invoke(git.reset(file = _file))
+        invoke(git.checkout(target = _file))
         _remove_from_list = True
     elif item.strip().startswith('??'): #the file is out of hash control
-        invoke(['rm ' + _file])
+        invoke('rm ' + _file)
         _remove_from_list = True
     elif item.strip().startswith('*'): #the file status is unknown other than 'changed'
         exit_with_error("don't know how to revert %s" % _file)
@@ -874,7 +925,7 @@ def revert_file_item(item, unused):
 def remove_link_file(x):
     _fullpath = sys.argv[0]
     _dir = _fullpath[:_fullpath.rfind('/') + 1]
-    invoke(['rm %s' % (_dir + x)])
+    invoke('rm %s' % (_dir + x))
 
 #-------------------GLOBAL SETTINGS-------------------
 # Edit the following settings to make GITTool fits your need

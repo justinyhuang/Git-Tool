@@ -54,37 +54,45 @@ def GITSave(srv = '', param = ''):
               With 'gsv <filename>' gsv will allow the user to pick two hashes and
               generate the patch file based on user's selection.
 
+        Not sure about the hash/file? Use the following for interative operation:
+            * gsvh - save changes between two hashes into a patch file
+            * gsvf - save some changed files instead of saving all the changed files
         Do 'gsv ?' to show this help message.
     """
+    _ifhash = ('h' in srv)
+    _iffile = ('f' in srv)
     _current_branch = get_current_branch()
-    if len(param) > 1 and os.path.isfile(param[1]): #user ask for generating a patch
+    if len(param) > 1: #user ask for generating a patch
         if len(param) == 3: #both hash string and the file name is given
             _hash_str, _patch_file = param[1], param[2]
         else: #only file name is given, help him to pick two hashes
-            _patch_file = param[1]
-            _file_list, _hash_str = get_hash_change()
-            print(_file_list)
-            _ans = get_answer(prompt = 'Patch the change in these files? [y/N]', default = 'n')
-            if _ans is 'N' or _ans is 'n':
-                exit()
-        _tmp = invoke([git.patch(selection = _hash_str, patch_file = _patch_file)])
-        _ans = get_answer(prompt = 'where to store %s ?' % _patch_file)
-        _target_dir=os.path.expanduser(_ans)
-        if not os.path.isdir(_target_dir):#directory doesn't exist, try to make one
-            os.makedirs(_target_dir)
-        invoke(['mv %s %s' % (_patch_file, _target_dir)])
-        return '\npatch saved to %s/%s' % (_target_dir, _patch_file)
-    else: #do a push or a commit
+            _hash_str, _patch_file = '', param[1]
+        return do_patch(_hash_str, _patch_file)
+    else: #no parameter is given
+        if _ifhash:#generate a patch
+            _patch_file = get_answer(prompt = 'Enter the name of the patch file:')
+            return do_patch('', _patch_file)
         if num_uncommited_files(): #there are changed files to commit
             _msg = get_answer(prompt = 'Any comment? [empty comment is not allowed]')
-            _msg = '"' + _msg + '"'
             _ans=get_answer(prompt = 'Save to ' +\
                             paint('red', _current_branch) + ' ? [Y/n]',
                             default = 'y')
             if _ans == 'n' or _ans == 'N':
                 _branch_list, _branch = select_branch()
                 do_checkout_branch(selected_branch = _branch, in_list = False)
-            invoke([git.commit(' -a -m %s' % _msg)])
+            if _iffile:#save some of the changed files
+                #_changed_files, _hash_str = get_hash_change(with_previous_hash = True)
+                _status, _hash_str = do_status()
+                _changed, _untracked= get_changed_files(_status)
+                _changed_files = _changed + _untracked
+                _ball = FileBall(_changed_files)
+                _save_files = get_answer(title = ' File List ',
+                                         prompt = 'Select files to save: ',
+                                         ball = _ball)
+                do_commit(files_to_save = _save_files, msg = _msg)
+                return 'done'
+            else: #save all changes
+                do_commit(msg = _msg)
             return "Done"
         else: # there is no changed files, try a push
             return push_to_remote()
@@ -112,7 +120,7 @@ def GITLoad(srv, param):
               When 'gld <file_name> <hash_name>' in a git path, 'gld' will load the file
               from the given hash.
 
-        When not sure about the branch/hash/tag/file, use:
+        Not sure about the branch/hash/tag/file? Use the following for interative operation:
             * gldb - to pick a branch from a list and do a checkout or merge.
             * gldr - to fetch/merge a remote branch picked from list
             * gldh - to pick a hash (a.k.a commit/hash) from a list and do a checkout or merge
@@ -177,12 +185,12 @@ def GITLoad(srv, param):
                 exit_with_error("This feature is not supported, yet")
             elif _iffile: #checkout file/s from a hash
                 #promp to pick a hash
-                _changed_files, _hash_str = get_hash_change(with_previous_hash = True)
+                _changed_files, _hash_str = get_hash_change(with_current_hash = True)
                 _load_hash = _hash_str.split('..')[0]
                 #prompt to pick files
                 _ball = FileBall(_changed_files.split('\n'))
                 _load_files = get_answer(title = ' File List ',
-                                         prompt = 'Select files to save: ',
+                                         prompt = 'Select files to load: ',
                                          ball = _ball)
                 do_checkout_file_from_commit(_load_files, _load_hash)
                 return 'done'
@@ -263,7 +271,7 @@ def GITDiff(srv, param):
     if _difftool == 'vimdiff':
         os.system(_cmd)
     else:
-        _tmp = invoke([_cmd])
+        _tmp = invoke(_cmd)
     return ''
 
 def GITStatus(srv, param):
@@ -331,26 +339,8 @@ def GITStatus(srv, param):
     check_git_path()
     _isdir, _isremote, _ishash = ('d' in srv), ('r' in srv), ('h' in srv)
     _compare_str = param[1] if len(param) > 1 else ''
-    _cmds, _status = list(), ''
-    if _isremote: #comparing with the remote branch
-        #first fetch the latest copy, and compare locally
-        print("comparing with the remote repository, please wait...")
-        _remote = get_local('branch.%s.remote' % get_current_branch())
-        do_fetch(url = _remote)
-        _compare_str = '%s..%s' % (get_current_branch(), get_remote_branch())
-    elif _ishash:
-        _compare_str = select_hash_range()
-    if _compare_str:#with comparison objects specified, use 'git diff'
-        for t in 'ACDMRTUXB':#diff with different diff filter to get the change's type
-            _cmds.append(git.diff(selection = _compare_str, type = t))
-    else:# without comparison objects specified, use 'git status'
-        _cmds.append(git.status(param = '-s'))
-    for c in _cmds:
-        if _isdir: #only show the touched files in the current directory
-            c += ' -- ' + os.getcwd()
-        _tmp = invoke([c])
-        _tmp = translate_status_code(c, _tmp)
-        _status += _tmp[:_tmp.rfind('\n')] + '\n' if _tmp else ''
+    _status, _compare_str = do_status(isremote = _isremote, ishash = _ishash, isdir = _isdir,
+                                      compare_str = _compare_str)
     _final_str = '' # prepare for a prettified outcome
     if _compare_str:#show changed files between two commits
         if '..' in _compare_str: #two compare candidates are given
@@ -373,7 +363,6 @@ def GITStatus(srv, param):
         _untracked= []
     else: #show changed but not yet commited files, with indexes added
         _changed, _untracked= get_changed_files(_status)
-        _changes = len(_changed)
         _comp1, _comp2 = get_current_branch(), 'working copy'
     _files = FileBall(_changed + _untracked)
     _ans = get_answer(title = make_status_header(_comp1, _comp2),
@@ -493,14 +482,14 @@ def GITSetup(param):
         print("removing all the link files...")
         traverse_nested_list_with_action(SERVICES, remove_link_file)
         print("restore the .gitconfig file")
-        invoke(['cp ~/.gitconfig ~/.gitconfig.gittool'])
-        invoke(['mv ~/.gitconfig.gittool.backup ~/.gitconfig'])
+        invoke('cp ~/.gitconfig ~/.gitconfig.gittool')
+        invoke('mv ~/.gitconfig.gittool.backup ~/.gitconfig')
         exit()
     _ans = get_answer(prompt = 'Would you like to setup GITTool? [y/N]', default = 'n',
                        help = 'This will simply create a bunch of symbol links for you.' +
                               '\nSo would you like to setup GITTool? [y/N]')
     if 'y' == _ans or 'Y' == _ans:
-        invoke(['cp ~/.gitconfig ~/.gitconfig.gittool.backup'])
+        invoke('cp ~/.gitconfig ~/.gitconfig.gittool.backup')
         print("back up the original .gitconfig file")
         print("if your system supports colored text, you shall see them below:")
         for c in color.keys():
@@ -543,16 +532,16 @@ def GITSetup(param):
             if type(service) == list:
                 #this is a nested list, right now we support 2-level nested list
                 for sub_service in service:
-                    invoke(["ln -s %(source)s %(link)s" %
-                            {'source' : _source, 'link' : _target_dir + '/' + sub_service}])
+                    invoke("ln -s %(source)s %(link)s" %
+                            {'source' : _source, 'link' : _target_dir + '/' + sub_service})
             else:
-                invoke(["ln -s %(source)s %(link)s" %
+                invoke("ln -s %(source)s %(link)s" %
                         {'source' : _source,
-                         'link' : _target_dir+'/'+service}])
+                         'link' : _target_dir+'/'+service})
         print("done.\ntry ghelp for more info")
 
 #a list of services provided to the user, via symbolic links
-SERVICES = [ 'gsv',
+SERVICES = [ 'gsv', 'gsvh', 'gsvf',
              'gld', 'gldr', 'gldb', 'gldh', 'gldt', 'gldf',
              'gst',
              ['gst' + x for x in allperm('dr')], #combination of 'd', 'r'
@@ -578,7 +567,7 @@ if __name__ == '__main__':
     this tool works like busybox: all the symbolic links to the same file.
     depending on what command name is invoked, we provide corresponding services.
     """
-    invoke(['export','LANG=en_US.UTF-8'])
+    invoke('export LANG=en_US.UTF-8')
     #get the service requested by the user
     parser = OptionParser()
     service = parser.get_prog_name()
