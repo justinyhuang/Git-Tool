@@ -129,28 +129,28 @@ def GITLoad(srv, param):
     if not root_path(): #in a non-git path, do a clone (nothing else we could do, right?)
         if _ifbranch or _ifremote or _ifhash or _iftag:
             exit_with_error("You need to run the command in a git repo")
-        _result = do_clone()
+        return do_clone()
     else: #in a git path
         _curbranch = get_current_branch()
         if len(param) == 2: #something is provided as the parameter
             _in_branch_list = param[1] in get_branch_list()[1]
             if _ifbranch or _in_branch_list: #this is a local branch, or the user says so
-                _result = merge_or_checkout(param[1], _in_branch_list)
+                return merge_or_checkout(param[1], _in_branch_list)
             if _iftag: #user says it is a tag
-                _result = do_checkout_from_commit(param[1])
+                return do_checkout_from_commit(param[1])
             if _ifremote: #user says it is a remote branch
-                _result = do_fetch(ref = param[1])
+                return do_fetch(ref = param[1])
             #is this a remote branch?
             _remote_branch = is_remote_branch(param[1])
             if _remote_branch: #yes we find it
-                _result = do_fetch(ref = param[1])
+                return do_fetch(ref = param[1])
             #TODO: can we support merging from a remote branch?
             if os.path.isfile(param[1]): #this is a patch file
-                _result = do_apply(param[1])
+                return do_apply(param[1])
             else: #the last possibility is...tag, try with fingers crossed...
                 _ans = get_answer(prompt = "Is %s a tag? [y/N]" % param[1])
                 if _ans == 'y' or _ans == 'Y':
-                    _result = do_checkout_from_commit(param[1])
+                    return do_checkout_from_commit(param[1])
                 else:
                     exit_with_error("Don't know how to load [%s]" % param[1])
         elif len(param) == 3: #to load a file from a hash
@@ -159,20 +159,20 @@ def GITLoad(srv, param):
             else:
                 _checkout_file, _checkout_hash = param[2], param[1]
             do_checkout_file_from_commit([_checkout_file], _checkout_hash)
-            _result = 'done'
+            return 'done'
         else: #no parameter is given.
             if _ifbranch: #this is a branch thing
                 _branch_list, _branch = select_branch(_ifremote)
                 if _ifremote:# fetch from remote
-                    _result = do_checkout_branch(selected_branch = _branch,
+                    return do_checkout_branch(selected_branch = _branch,
                                               in_list = _branch in _branch_list,
                                               isremote = _ifremote)
                 else: #it is a local branch
-                    _result = merge_or_checkout(target = _branch,
+                    return merge_or_checkout(target = _branch,
                                              in_list = _branch in _branch_list)
             elif _ifhash: #checkout a hash to a new branch
                 _hash = select_hash()
-                _result = merge_or_checkout(target = _hash, in_list = False)
+                return merge_or_checkout(target = _hash, in_list = False)
             elif _iftag: #checkout a tag to a new branch
                 exit_with_error("This feature is not supported, yet")
             elif _iffile: #checkout file/s from a hash
@@ -185,7 +185,7 @@ def GITLoad(srv, param):
                                          prompt = 'Select files to save: ',
                                          ball = _ball)
                 do_checkout_file_from_commit(_load_files, _load_hash)
-                _result = 'done'
+                return 'done'
             else: # if i have to guess, i will try updating the repo
                 _ans = get_answer(prompt = "Update current repository? [Y/n]",
                                   default = 'y',
@@ -193,10 +193,9 @@ def GITLoad(srv, param):
                                          "merge or rebase your local changes")
                 if _ans != 'n' and _ans != 'N':
                     update_local_branch()
-                    _result = "done"
+                    return "done"
                 else:
                     exit_with_error("Please tell me more. You know I don't know what you know :(")
-    return _result
 
 def GITDiff(srv, param):
     """ gdi
