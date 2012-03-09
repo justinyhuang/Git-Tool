@@ -50,7 +50,7 @@ class HashBall(Ball):
     def __init__(self, list, name = 'hash'):
         super(HashBall, self).__init__(list, name)
     def __getitem__(self, k): #return the hash only
-        _firstline = self[k].split('\n')[0]
+        _firstline = self.list[k].split('\n')[0]
         return _firstline.split()[-1]
     def delete(self, item_list):
         exit_with_error("Deleting a hash is not allowed")
@@ -114,10 +114,17 @@ class RefSourceBall(Ball):
 
 class GITError(Exception):
     """base class of all GitTool error exceptions"""
-    msg = """General Error. Sorry I don't have too much to say..."""
+    def __init__(self, msg):
+        if msg:
+            self._msg = msg
+        else:
+            self._msg = """General Error. Sorry I don't have too much to say..."""
+    def throw(self):
+        raise RuntimeError(self._msg)
 
-class ConfigItemMissing(GITError):
-    msg = """The item/section in the git config file does not exist"""
+eConfigItemMissing = GITError("The item/section in the git config file does not exist")
+eUnsupportedOperation = GITError("The operation is not supported, yet")
+eNoBallFound = GITError("The operation needs a ball but nothing is found")
 
 #-------------------INTERNAL HELPPER FUNCTIONS-------------------
 #The internal helpper functions are used by the service functions.
@@ -157,8 +164,17 @@ def invoke(cmd, detached = False):
         subprocess.Popen(cmd, stderr=subprocess.PIPE)
     return ""
 
+def get_indexes(line, operator = ''):
+    #space, '-' or ',' is used as separator
+    if re.search('^' + operator + '\d+([\s,-]+\d+)*\s*$', line):
+        #expand strings like '1-3' to '1 2 3' to further get all the indexes to delete
+        _tmp = re.sub('\d+[\s]*-[\s]*\d+', expand_indexes_from_range, line[len(operator):])
+        return [int(x.group()) for x in re.finditer('\d+', _tmp)] #get all indexes
+    else:
+        return None
+
 #helper function to prompt users information and receive answers
-def get_answer(prefix = '', prompt = '', postfix = '', default = None,
+def get_answer(title = '', prompt = '', postfix = '', default = None,
                help = '', ball = None, hl = -1):
     if (ball and ball.help): # take the help if it is provided by the ball
         help += ball.help
@@ -169,9 +185,9 @@ def get_answer(prefix = '', prompt = '', postfix = '', default = None,
         _ps = paint('lightblue', PROMPT_SIGN)
     while True: #loop until we have an acceptable answer
         if ball: # when a ball is given, show the item list in the ball.
-            _prompt = (prefix + '\n' if prefix else '') +\
-                      '\n'.join(ball.get_indexed_list(highlight = hl)) + '\n' +\
-                      (postfix + '\n' if postfix else '') + prompt
+            _prompt = make_msg_bar(title)
+            _prompt += '\n'.join(ball.get_indexed_list(highlight = hl)) + '\n' +\
+                       (postfix + '\n' if postfix else '') + prompt
         else:
             _prompt = prompt
         _ans = raw_input(_prompt + _ps).strip()
@@ -181,11 +197,9 @@ def get_answer(prefix = '', prompt = '', postfix = '', default = None,
             exit()
         elif _ans.startswith('/d '):
             if ball is None:
-                exit_with_error("no ball is passed while a delete is required")
-            if re.search('^\/d\s+\d+([\s,-]+\d+)*\s*$', _ans): #space or ',' is used as separator
-                #expand strings like '1-3' to '1 2 3' to further get all the indexes to delete
-                _tmp = re.sub('\d+[\s]*-[\s]*\d+', expand_indexes_from_range, _ans[3:])
-                _d_list = [int(x.group()) for x in re.finditer('\d+', _tmp)] #get all indexes
+                eNoBallFound.throw()
+            _d_list = get_indexes(operator = '/d ', line = _ans)
+            if _d_list:
                 ball.delete(_d_list)
             else:
                 exit_with_error("to delete an item, try '/d <index>'")
@@ -195,11 +209,9 @@ def get_answer(prefix = '', prompt = '', postfix = '', default = None,
                     hl -= 1
         elif _ans.startswith('/a '):
             if ball is None:
-                exit_with_error("no ball is passed while a delete is required")
-            if re.search('^\/a\s+\d+([\s,-]+\d+)*\s*$', _ans): #space or ',' is used as separator
-                #expand strings like '1-3' to '1 2 3' to further get all the indexes to delete
-                _tmp = re.sub('\d+[\s]*-[\s]*\d+', expand_indexes_from_range, _ans[3:])
-                _a_list = [int(x.group()) for x in re.finditer('\d+', _tmp)] #get all indexes
+                eNoBallFound.throw()
+            _a_list = get_indexes(operator = '\a ', line = _ans)
+            if _a_list:
                 ball.add(_a_list)
             else:
                 exit_with_error("to add an item, try '/a <index>'")
@@ -207,10 +219,15 @@ def get_answer(prefix = '', prompt = '', postfix = '', default = None,
             for x in _a_list:
                 if x < hl:
                     hl += 1
-        elif re.search('^\s*\d+\s*', _ans) and ball: #return the selected ball item
-            return ball[int(_ans)]
-        elif _ans or default: #this is a non-empty input, or default is set to allow direct Enter
-            return _ans if _ans else default
+        else:
+            _list = get_indexes(line = _ans)
+            if _list:
+                _items = []
+                for i in _list:
+                    _items.append(ball[i])
+                return _items if len(_items) > 1 else _items[0]
+            elif _ans or default: #this is a non-empty input, or default is set to allow direct Enter
+                return _ans if _ans else default
 
 #show a list of items with index and one of the item highlighted
 def index_list(list, index_color = 'none', highlight = -1, hl_color = 'red'):
@@ -260,8 +277,8 @@ def make_msg_bar(msg):
     _colorless_msg = msg
     _colorless_msg = re.sub('\033[^m]*m', '', _colorless_msg) #remove the color code
     _msg_len = len(_colorless_msg)
-    _pre = '_' * ((80 - _msg_len) / 2)
-    _post = '_' * ((80 - _msg_len) / 2 + (80 - _msg_len) % 2)
+    _pre = paint('yellow', '=' * ((80 - _msg_len) / 2))
+    _post = paint('yellow', '=' * ((80 - _msg_len) / 2 + (80 - _msg_len) % 2))
     return _pre+msg+_post+'\n'
 
 #exit with error
@@ -301,7 +318,7 @@ def translate_status_code(cmd, ori):
 def select_branch(isremote = False):
     _curbranch, _branch_list = get_branch_list(isremote)
     _listball = BranchBall(_branch_list, name = 'remote branch' if isremote else 'branch')
-    _ans = get_answer(prefix = '--- Branch List ---', default = '/e',
+    _ans = get_answer(title = ' Branch List ', default = '/e',
                       ball = _listball, hl = _curbranch)
     if _ans == '/e': #user enters nothing, might think of quit
         exit()
@@ -449,7 +466,7 @@ def copy_branch_config(branch_to, branch_from):
 def get_remote_url():
     _remote = get_local('branch.%s.remote' % get_current_branch())
     if _remote is None:
-        raise ConfigItemMissing
+        eConfigItemMissing.throw()
     _url = get_local('remote.%s.url' % _remote)
     return _url
 
@@ -457,7 +474,7 @@ def get_remote_url():
 def set_remote_url(url):
     _remote = get_local('branch.%s.remote' % get_current_branch())
     if _remote is None:
-        raise ConfigItemMissing
+        eConfigItemMissing.throw()
     set_local('remote.%s.url' % _remote, url)
 
 #get the remote branch, the merge value in the branch section
@@ -466,7 +483,7 @@ def get_remote_branch(show_remote_path = False):
     _current_branch = get_current_branch()
     _remote_branch = get_local('branch.%s.merge' % _current_branch)
     if not _remote_branch:# empty value is not acceptable
-        raise ConfigItemMissing
+        eConfigItemMissing.throw()
     if show_remote_path: # return the path in the remote repo
         # skip the 'remotes' part
         if _remote_branch.startswith('refs/remotes'):
@@ -608,6 +625,10 @@ def do_checkout_branch(selected_branch, in_list = True, isremote = False):
         _tmp = make_branch(selected_branch)
     return _tmp
 
+def do_checkout_file_from_commit(files, hash):
+    for f in files:
+        invoke([git.checkout(target = '%s %s' % (hash, f))])
+
 def do_checkout_from_commit(ref):
     _new_branch = ''
     ref = ref.strip(' \n\t')
@@ -683,12 +704,20 @@ def push_to_remote():
                 add_to_source_list('ref', _ref)
             increment_count('url', _url)
             increment_count('ref', _ref)
-            pdb.set_trace()
             set_remote_branch(_ref)
     _cmd = git.push(repo = _url, branch = get_current_branch(), ref = _ref)
     return invoke([_cmd])
 
 #-------------------hash helppers
+#take two hashes and return a valid hash string based on the age of the hashes
+def ordered_hash_string(h1, h2):
+    _birthday1 = invoke([git.log(hash = h1, num = 1, format = '%ct')])
+    _birthday2 = invoke([git.log(hash = h2, num = 1, format = '%ct')])
+    if int(_birthday1) > int(_birthday2): #h1 is younger than h2
+        return '%s..%s' % (h2, h1)
+    else:
+        return '%s..%s' % (h1, h2)
+
 #prompt the user a list of hashes and ask for a selected hash
 def select_hash(since = 7, until = 0):
     _group_size = since
@@ -699,7 +728,7 @@ def select_hash(since = 7, until = 0):
         _format='Rev:       %h%n\tDate:     %cd%n\tComment:  %s|'
         _tmp = do_log(_range, _format)
         _ball = HashBall(_tmp.split('|\n')[:-1])
-        _ans = get_answer(default = 'more', ball = _ball,
+        _ans = get_answer(title = ' Hash List ', default = 'more', ball = _ball,
                           help = '   Enter directly or "more" for more hashes, or\n' +
                                  '   "more <ID>" for further details of the hash, or\n')
         if _ans == 'more':
@@ -713,27 +742,25 @@ def select_hash(since = 7, until = 0):
             return _ans
         continue
 
-def select_hash_range(with_previous_hash = False):
+def select_hash_range(with_current_hash = False, with_previous_hash = False):
     if with_previous_hash is True: #obtain the current and its previous hash
         _current_hash, _base_hash = get_hashes(2)
     else: #get the hashes given by the user
-        print("[+] Select the" + paint('red', " start ") + 'hash')
+        print("[+] Select a hash")
         _base_hash = select_hash(since = 4)
-        print("[+] Select the" + paint('red', " end ") + 'hash')
-        _current_hash = select_hash(since = 4)
-    return _base_hash + '..' + _current_hash
+        if not with_current_hash:#we need two hashes to get the range
+            print("[+] Select the other hash")
+            _current_hash = select_hash(since = 4)
+        else:
+            _current_hash = get_hashes(1)[0]
+    return ordered_hash_string(_base_hash, _current_hash)
 
 #get file differences between two hashes
 def get_hash_change(with_previous_hash = False):
     _hash_str = select_hash_range(with_previous_hash)
     #list all changed files
     _file_list = invoke([git.diff(selection = _hash_str)])
-    print(_file_list)
-    _tmp = get_answer(prompt = 'Are the files that you changed? [y/N]', default = 'n')
-    if _tmp is 'N' or _tmp is 'n':
-        return None, None
-    else:
-        return _file_list, _hash_str
+    return _file_list.strip(' \n'), _hash_str
 
 #get the current hash string
 def get_hashes(num):
@@ -768,7 +795,7 @@ def get_source_list(source):
     for i in range(get_source_list_len(source)):
         _tmp = get_global('sourcelist.%s.item%d' % (source, (i + 1)))
         if _tmp is None:
-            raise ConfigItemMissing
+            eConfigItemMissing.throw()
         _list.append(_tmp)
     return _list
 
@@ -832,6 +859,7 @@ def revert_file_item(item, unused):
     elif re.search('^[MARCD]_', item): #index and worktree are the same, need to reset first
         invoke([git.reset(file = _file)])
         invoke([git.checkout(target = _file)])
+        _remove_from_list = True
     elif item.strip().startswith('??'): #the file is out of hash control
         invoke(['rm ' + _file])
         _remove_from_list = True

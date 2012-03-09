@@ -10,8 +10,6 @@ Available services:
    gls: Git List, shows basic information of the current hash
    gcf: Git ConFig, shows the global settings and configuration of the working copy.
    ghelp: help info for GITUtil
-Proposed services:
-   ???gfl: Git File, to fetch a file from a hash
 Dependencies (please install):
    git: Git-Tool is a wrapper of git
    graphviz and qiv: Git-Tool needs both to show graphical hash tree via glsg
@@ -29,7 +27,6 @@ from optparse import OptionParser
 TODO: when a branch name is origin, we should not name the linked 'remote' section to 'origin'!!
 TODO: we need a solid config file to make sure git-tool is correctly working. fix potential issues.
 TODO: add functionality to support 'save' some files and keep other files uncommitted.
-TODO: add functionality to support checking out a file from specific hash (git checkout <file> <hash> might just do that)
 TODO: need to consider the situation when the tool is used without a network connection: we will need to skip the checking of remote branches/repo's
 TODO: add the path of git-tool bin directory to PATH and the path of git-tool python files to PYTHONPATH, in gitsetup
 TODO: when there are a long list of remote branches, how would a user pick one easily?
@@ -66,6 +63,10 @@ def GITSave(srv = '', param = ''):
         else: #only file name is given, help him to pick two hashes
             _patch_file = param[1]
             _file_list, _hash_str = get_hash_change()
+            print(_file_list)
+            _ans = get_answer(prompt = 'Patch the change in these files? [y/N]', default = 'n')
+            if _ans is 'N' or _ans is 'n':
+                exit()
         _tmp = invoke([git.patch(selection = _hash_str, patch_file = _patch_file)])
         _ans = get_answer(prompt = 'where to store %s ?' % _patch_file)
         _target_dir=os.path.expanduser(_ans)
@@ -108,12 +109,15 @@ def GITLoad(srv, param):
             * a git checkout/merge - load data from a branch, or by a hash/tag
               When 'gld <ref_name>' in a git path, where a ref could be a branch/hash/tag
               'gld' will perform a git checkout or merge
+              When 'gld <file_name> <hash_name>' in a git path, 'gld' will load the file
+              from the given hash.
 
-        When not sure about the branch/hash/tag, use:
+        When not sure about the branch/hash/tag/file, use:
             * gldb - to pick a branch from a list and do a checkout or merge.
             * gldr - to fetch/merge a remote branch picked from list
             * gldh - to pick a hash (a.k.a commit/hash) from a list and do a checkout or merge
             * gldt - to pick a tag from list and do a checkout or merge [NOT IMPLEMENTED]
+            * gldf - to load a file/files from a given hash
 
         Do 'gld ?' to show this help message.
     """
@@ -121,6 +125,7 @@ def GITLoad(srv, param):
     _ifbranch = 'b' in srv or _ifremote #when 'r' is given, 'b' automatically becomes True
     _ifhash = 'h' in srv
     _iftag = 't' in srv
+    _iffile = 'f' in srv
     if not root_path(): #in a non-git path, do a clone (nothing else we could do, right?)
         if _ifbranch or _ifremote or _ifhash or _iftag:
             exit_with_error("You need to run the command in a git repo")
@@ -130,50 +135,65 @@ def GITLoad(srv, param):
         if len(param) == 2: #something is provided as the parameter
             _in_branch_list = param[1] in get_branch_list()[1]
             if _ifbranch or _in_branch_list: #this is a local branch, or the user says so
-                return merge_or_checkout(param[1], _in_branch_list)
+                _result = merge_or_checkout(param[1], _in_branch_list)
             if _iftag: #user says it is a tag
-                return do_checkout_from_commit(param[1])
+                _result = do_checkout_from_commit(param[1])
             if _ifremote: #user says it is a remote branch
-                return do_fetch(ref = param[1])
+                _result = do_fetch(ref = param[1])
             #is this a remote branch?
             _remote_branch = is_remote_branch(param[1])
             if _remote_branch: #yes we find it
-                return do_fetch(ref = param[1])
-                #return do_checkout_from_commit(_remote_branch.split('\t')[-1])
+                _result = do_fetch(ref = param[1])
             #TODO: can we support merging from a remote branch?
             if os.path.isfile(param[1]): #this is a patch file
-                return do_apply(param[1])
+                _result = do_apply(param[1])
             else: #the last possibility is...tag, try with fingers crossed...
                 _ans = get_answer(prompt = "Is %s a tag? [y/N]" % param[1])
                 if _ans == 'y' or _ans == 'Y':
-                    return do_checkout_from_commit(param[1])
+                    _result = do_checkout_from_commit(param[1])
                 else:
                     exit_with_error("Don't know how to load [%s]" % param[1])
+        elif len(param) == 3: #to load a file from a hash
+            if os.path.isfile(param[1]):
+                _checkout_file, _checkout_hash = param[1], param[2]
+            else:
+                _checkout_file, _checkout_hash = param[2], param[1]
+            do_checkout_file_from_commit([_checkout_file], _checkout_hash)
+            _result = 'done'
         else: #no parameter is given.
             if _ifbranch: #this is a branch thing
-                #TODO: when checking out a remote branch, we need to ask for a new branch name!
-                #now we are in a no-branch state when the remote branch is checked out.
                 _branch_list, _branch = select_branch(_ifremote)
                 if _ifremote:# fetch from remote
-                    return do_checkout_branch(selected_branch = _branch,
+                    _result = do_checkout_branch(selected_branch = _branch,
                                               in_list = _branch in _branch_list,
                                               isremote = _ifremote)
                 else: #it is a local branch
-                    return merge_or_checkout(target = _branch,
+                    _result = merge_or_checkout(target = _branch,
                                              in_list = _branch in _branch_list)
             elif _ifhash: #checkout a hash to a new branch
                 _hash = select_hash()
-                return merge_or_checkout(target = _hash, in_list = False)
+                _result = merge_or_checkout(target = _hash, in_list = False)
             elif _iftag: #checkout a tag to a new branch
                 exit_with_error("This feature is not supported, yet")
+            elif _iffile: #checkout file/s from a hash
+                #promp to pick a hash
+                _changed_files, _hash_str = get_hash_change(with_previous_hash = True)
+                _load_hash = _hash_str.split('..')[0]
+                #prompt to pick files
+                _ball = FileBall(_changed_files.split('\n'))
+                _load_files = get_answer(title = ' File List ',
+                                         prompt = 'Select files to save: ',
+                                         ball = _ball)
+                do_checkout_file_from_commit(_load_files, _load_hash)
+                _result = 'done'
             else: # if i have to guess, i will try updating the repo
                 _ans = get_answer(prompt = "Update current repository? [Y/n]",
-                                         default = 'y',
-                                         help = "after the update, you can choose to either" +
-                                                "merge or rebase your local changes")
+                                  default = 'y',
+                                  help = "after the update, you can choose to either" +
+                                         "merge or rebase your local changes")
                 if _ans != 'n' and _ans != 'N':
                     update_local_branch()
-                    return "done"
+                    _result = "done"
                 else:
                     exit_with_error("Please tell me more. You know I don't know what you know :(")
     return _result
@@ -357,7 +377,7 @@ def GITStatus(srv, param):
         _changes = len(_changed)
         _comp1, _comp2 = get_current_branch(), 'working copy'
     _files = FileBall(_changed + _untracked)
-    _ans = get_answer(prefix = make_msg_bar(make_status_header(_comp1, _comp2)),
+    _ans = get_answer(title = make_status_header(_comp1, _comp2),
                       prompt = '',
                       default = '/e',
                       help = _git_status_code,
@@ -534,7 +554,7 @@ def GITSetup(param):
 
 #a list of services provided to the user, via symbolic links
 SERVICES = [ 'gsv',
-             'gld', 'gldr', 'gldb', 'gldh', 'gldt',
+             'gld', 'gldr', 'gldb', 'gldh', 'gldt', 'gldf',
              'gst',
              ['gst' + x for x in allperm('dr')], #combination of 'd', 'r'
              ['gst' + x for x in allperm('br')], #combination of 'b', 'r'
@@ -579,5 +599,5 @@ if __name__ == '__main__':
                 print(result)
             except KeyError: #if no available service is found, try to install git-tool
                 GITSetup(sys.argv)
-    except ConfigItemMissing:
-        exit_with_error("There are item or section missing in the config file")
+    except Exception, err:
+        sys.stderr.write('ERROR: %s\n' % str(err))
