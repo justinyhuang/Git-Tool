@@ -25,8 +25,9 @@ from optparse import OptionParser
 
 """
 TODO: when a branch name is origin, we should not name the linked 'remote' section to 'origin'!!
+TODO: enhance gcf so that user can change the configuration: remote/fetch/url/merge/difftool values easily
+TODO: where to put git blame?
 TODO: we need a solid config file to make sure git-tool is correctly working. fix potential issues.
-TODO: add functionality to support 'save' some files and keep other files uncommitted.
 TODO: need to consider the situation when the tool is used without a network connection: we will need to skip the checking of remote branches/repo's
 TODO: add the path of git-tool bin directory to PATH and the path of git-tool python files to PYTHONPATH, in gitsetup
 TODO: when there are a long list of remote branches, how would a user pick one easily?
@@ -79,6 +80,7 @@ def GITSave(srv = '', param = ''):
                             default = 'y')
             if _ans == 'n' or _ans == 'N':
                 _branch_list, _branch = select_branch()
+                _branch = _branch[0]
                 do_checkout_branch(selected_branch = _branch, in_list = False)
             if _iffile:#save some of the changed files
                 #_changed_files, _hash_str = get_hash_change(with_previous_hash = True)
@@ -171,6 +173,7 @@ def GITLoad(srv, param):
         else: #no parameter is given.
             if _ifbranch: #this is a branch thing
                 _branch_list, _branch = select_branch(_ifremote)
+                _branch = _branch[0]
                 if _ifremote:# fetch from remote
                     return do_checkout_branch(selected_branch = _branch,
                                               in_list = _branch in _branch_list,
@@ -200,8 +203,7 @@ def GITLoad(srv, param):
                                   help = "after the update, you can choose to either" +
                                          "merge or rebase your local changes")
                 if _ans != 'n' and _ans != 'N':
-                    update_local_branch()
-                    return "done"
+                    return update_local_branch()
                 else:
                     exit_with_error("Please tell me more. You know I don't know what you know :(")
 

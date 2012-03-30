@@ -149,7 +149,7 @@ def split(str, sep = None):
     return str.split(sep) if str else []
 
 #invoke bash commands
-def invoke(cmd, detached = False):
+def invoke(cmd, detached = False, need_error_and_out = False):
     if DEBUG == True: #for debug only
         print('>>> %s <<<' % cmd)
     if detached is False:
@@ -157,12 +157,15 @@ def invoke(cmd, detached = False):
                                    shell=True, stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         o=execution.communicate()
-        if o[1]: #return error if there is any
-            return o[1]
-        if o[0]: #only return the std result, when there is no error
-            return o[0]
+        if need_error_and_out: #return both stdout and stderr
+            return o[0], o[1]
+        else:
+            if o[1]: #return error if there is any
+                return o[1]
+            if o[0]: #only return the std result, when there is no error
+                return o[0]
     else: #invoke bash commands in separate process, no error return
-        subprocess.Popen([cmd], stderr=subprocess.PIPE)
+        subprocess.Popen(cmd.split(), stderr=subprocess.PIPE)
     return ""
 
 def get_indexes(line, operator = ''):
@@ -220,7 +223,7 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
             for x in _a_list:
                 if x < hl:
                     hl += 1
-        else:
+        elif ball:
             _list = get_indexes(line = _ans)
             if _list:
                 _items = []
@@ -229,6 +232,8 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
                 return _items
             elif _ans or default: #this is a non-empty input, or default is set to allow direct Enter
                 return _ans if _ans else default
+        else:
+            return _ans if _ans else default
 
 #show a list of items with index and one of the item highlighted
 def index_list(list, index_color = 'none', highlight = -1, hl_color = 'red'):
@@ -316,6 +321,8 @@ def translate_status_code(cmd, ori):
 
 #-------------------branch helppers
 #select a branch from list
+#Returns: the complete branch list,
+#         the selected branch/es, (COULD BE A BRANCH LIST)
 def select_branch(isremote = False):
     _curbranch, _branch_list = get_branch_list(isremote)
     _listball = BranchBall(_branch_list, name = 'remote branch' if isremote else 'branch')
@@ -323,7 +330,7 @@ def select_branch(isremote = False):
                       ball = _listball, hl = _curbranch)
     if _ans == '/e': #user enters nothing, might think of quit
         exit()
-    return _branch_list, _ans[0]
+    return _branch_list, _ans
 
 def make_branch(branch):
     _previous_branch = get_current_branch()
@@ -492,7 +499,15 @@ def get_remote_branch(show_remote_path = False):
         else:
             return _remote_branch
     else: # return the local copy path linked to the remote repo
-        return _remote_branch
+        _remote = get_local('branch.%s.remote' % _current_branch)
+        _fetch = get_local('remote.%s.fetch' % _remote)
+        _remote_copy, _local_copy = _fetch.split(':')
+        if '*' in _local_copy: #this is a path with wildcard
+            _remote_copy = _remote_copy.strip('*+')
+            _local_copy = _local_copy.strip('*')
+            return _remote_branch.replace(_remote_copy, _local_copy)
+        else: #this is the exact path to the remote branch
+            return _local_copy
 
 #set the remote branch, the merge value in the branch section
 def set_remote_branch(branch):
@@ -618,7 +633,11 @@ def do_log_graphic(num, hash_from, hash_to):
 
 def do_rebase(from_ref):
     print("rebasing from %s ..." % from_ref)
-    return invoke(git.rebase())
+    _stdout, _stderr = invoke(git.rebase(), need_error_and_out = True)
+    if 'Failed to merge' in _stdout: #need manual merge
+        os.system(git.mergetool())
+        _tmp = 'Done'
+    return _stdout + _stderr
 
 #merge branch, assuming frombr and tobr are valid branches
 def do_merge(from_ref, to_ref = None):
@@ -659,7 +678,8 @@ def do_checkout_from_commit(ref):
     while not _new_branch: #force to input a name
         _new_branch = get_answer(prompt = "Give a name to the new branch")
     print("loading %s ..." % paint('red', ref))
-    return invoke(git.checkout(target = ref, new_branch = _new_branch))
+    #return invoke(git.checkout(target = ref, new_branch = _new_branch))
+    return make_branch(_new_branch)
 
 def do_patch(hash_str, patch_file):
     if not hash_str:
@@ -718,7 +738,9 @@ def do_clone():
     #TODO: check if we have network connected.
     _urls = get_source_list('url')
     _ball = UrlSourceBall(_urls)
-    _url = get_answer(prompt = 'Pick a source to clone from', ball = _ball)[0]
+    _url = get_answer(prompt = 'Pick a source to clone from',
+                      title = ' URL List ',
+                      ball = _ball)[0]
     if _url not in [x.split()[0] for x in _urls]: #user type in a new item
         add_to_source_list('url', _url)
     print("Cloning %s ..." % _url)
@@ -730,6 +752,7 @@ def push_to_remote():
     #TODO: code is missing to set up the configuration properly after push from a local branch
     _url = get_remote_url()
     _ref = get_remote_branch(show_remote_path = True)
+    pdb.set_trace()
     if _url is None:
         exit_with_error('config values are missing, you will need to manually fix this issue')
     else:
@@ -740,7 +763,9 @@ def push_to_remote():
             #choose or specify a URL
             _urls = get_source_list('url')
             _ball = UrlSourceBall(_urls)
-            _url = get_answer(prompt = 'Select a URL to push', ball = _ball)[0]
+            _url = get_answer(prompt = 'Select a URL to push',
+                              title = ' URL List ',
+                              ball = _ball)[0]
             if _url not in [x.split()[0] for x in _urls]:
                 #user type in a new item that is not in the ball list, remember it
                 add_to_source_list('url', _url)
@@ -748,7 +773,9 @@ def push_to_remote():
             #choose or specify a REF
             _refs = get_source_list('ref')
             _ball = RefSourceBall(_refs)
-            _ref = get_answer(prompt = 'Select a REF to push', ball = _ball)[0]
+            _ref = get_answer(prompt = 'Select a REF to push',
+                              title = ' Reference List ',
+                              ball = _ball)[0]
             if _ref not in [x.split()[0] for x in _refs]:
                 #user type in a new item that is not in the ball list
                 add_to_source_list('ref', _ref)
@@ -907,9 +934,22 @@ def revert_file_item(item, unused):
     _remove_from_list = False
     if re.search('^_[MD]', item):    #not updated
         invoke(git.checkout(target = _file))
+        _remove_from_list = True
     elif re.search('^[MARCD]_', item): #index and worktree are the same, need to reset first
         invoke(git.reset(file = _file))
         invoke(git.checkout(target = _file))
+        _remove_from_list = True
+    elif re.search('^UU', item): #this is a corner case i met when pull to a conflict situation
+        invoke(git.reset(file = _file)) # put 'UU' to 'MM'
+        invoke(git.reset(file = _file)) # put 'MM' to ' M'
+        invoke(git.checkout(target = _file)) # clean ' M' eventually
+        #NOTE: when in here we most likely came from a failed merge, so even when reverting all the changes
+        #the repository is not yet cleaned, this is because of the existense of .git/MERGE_HEAD.
+        #remove the file and everything works (like 'git pull')
+        _remove_from_list = True
+    elif re.search('^AA', item): #another case introduced possibly by a failed merge
+        invoke(git.reset(file = _file)) # put 'AA' to '_M'
+        invoke(git.checkout(target = _file)) # clean ' M' eventually
         _remove_from_list = True
     elif item.strip().startswith('??'): #the file is out of hash control
         invoke('rm ' + _file)
