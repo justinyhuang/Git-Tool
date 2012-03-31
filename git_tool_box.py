@@ -79,8 +79,8 @@ def GITSave(srv = '', param = ''):
                             paint('red', _current_branch) + ' ? [Y/n]',
                             default = 'y')
             if _ans == 'n' or _ans == 'N':
-                _branch_list, _branch = select_branch()
-                _branch = _branch[0]
+                _branch_list, _branches = select_branch()
+                _branch = _branches[0]
                 do_checkout_branch(selected_branch = _branch, in_list = False)
             if _iffile:#save some of the changed files
                 #_changed_files, _hash_str = get_hash_change(with_previous_hash = True)
@@ -146,7 +146,7 @@ def GITLoad(srv, param):
             _in_branch_list = param[1] in get_branch_list()[1]
             if _ifbranch or _in_branch_list: #this is a local branch, or the user says so
                 return merge_or_checkout(param[1], _in_branch_list)
-            if _iftag: #user says it is a tag
+            if _iftag or _ifhash: #user says it is a tag, or a hash
                 return do_checkout_from_commit(param[1])
             if _ifremote: #user says it is a remote branch
                 return do_fetch(ref = param[1])
@@ -172,8 +172,8 @@ def GITLoad(srv, param):
             return 'done'
         else: #no parameter is given.
             if _ifbranch: #this is a branch thing
-                _branch_list, _branch = select_branch(_ifremote)
-                _branch = _branch[0]
+                _branch_list, _branches = select_branch(_ifremote)
+                _branch = _branches[0]
                 if _ifremote:# fetch from remote
                     return do_checkout_branch(selected_branch = _branch,
                                               in_list = _branch in _branch_list,
@@ -440,43 +440,18 @@ def GITConfig(srv, param):
         it is also possible to modify the values interatively with this tool.
         to set a config value, do:
             gcf <local/global> <section> <value>
+        gcfr to change the remote settings of the current branch.
     """
+    _if_change_remote = 'r' in srv
     if len(param) == 4: #set config value
         if param[1] == 'local': #set local value
             set_local(section = param[2], value = param[3])
         elif param[1] == 'global': #set global value
             set_global(section = param[2], value = param[3])
-    #local settings
-    if root_path():
-        _current_branch = get_current_branch()
-        _current_branch_remote = get_local('branch.%s.remote' % _current_branch)
-        _current_branch_merge = get_local('branch.%s.merge' % _current_branch)
-        _remote_branch = get_remote_branch(show_remote_path = True)
-        _repo_url = get_remote_url()
-    else:
-        _current_branch = _current_branch_remote = \
-        _current_branch_merge = _remote_branch = None
-    #global settings
-    _email = get_global('user.email')
-    _username = get_global('user.name')
-    _first_diff_tool = get_global('difftool.first')
-    _second_diff_tool = get_global('difftool.second')
-    _third_diff_tool = get_global('difftool.third')
-    #make up the output
-    _ret = ""
-    _ret += "current branch is %s\n" % _current_branch
-    _ret += "remote branch is %s\n" % _remote_branch
-    _ret += "remote repository url is %s\n" %  _repo_url
-    _ret += paint('yellow', "---Local Settings---\n")
-    _ret += "branch.%s.remote: %s\n" % (_current_branch, _current_branch_remote)
-    _ret += "branch.%s.merge: %s\n" % (_current_branch, _current_branch_merge)
-    _ret += paint('yellow', "---Global Settings---\n")
-    _ret += "user.name: %s\n" % _username
-    _ret += "user.email: %s\n" % _email
-    _ret += "difftool.first: %s\n" % _first_diff_tool
-    _ret += "difftool.second: %s\n" % _second_diff_tool
-    _ret += "difftool.third: %s\n" % _third_diff_tool
-    return _ret
+    if _if_change_remote:
+        change_remote()
+        print("Configuration has been changed to the following:\n")
+    return get_configurations()
 
 #setup the environment for first use
 def GITSetup(param):
@@ -548,7 +523,7 @@ SERVICES = [ 'gsv', 'gsvh', 'gsvf',
              'gst',
              ['gst' + x for x in allperm('dr')], #combination of 'd', 'r'
              ['gst' + x for x in allperm('br')], #combination of 'b', 'r'
-             'gcf',
+             'gcf', 'gcfr',
              'gls', 'glst', 'glsg',
              ['gls' + x for x in allperm('ad')], #combination of 'a', 'd'
              'gdi',

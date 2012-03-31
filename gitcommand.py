@@ -68,7 +68,9 @@ def showref(branch = ''):
 def show(selection = '', param = '', file = ''):
     return 'git show %s %s %s' % (selection, param, file)
 
-def config(type = '', section = '', element = '', value = None):
+def config(type = '', section = '', element = '', value = None, exp = None):
+    if exp: #for querying config items via a regular expression
+        return 'git config --get-regexp %s' % exp
     if value: #set function to an element, you can't set value of a section, can you?
         return 'git config --local %s "%s"' %(element, value) if type == 'local'\
           else 'git config --global %s "%s"' %(element, value)

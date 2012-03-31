@@ -113,6 +113,41 @@ class RefSourceBall(Ball):
             set_global('sourcelist.url.item%d' % (_ref_count - 1))
         super(RefSourceBall, self).delete(item_list, delete_source)
 
+class RemoteSourceBall(Ball):
+    """
+    A ball that holds and manages a list of remote section
+    The input list to this ball object needs to follow the format below:
+        remote.<name1>.<fetch/url> value
+        remote.<name1>.<url/fetch> value
+        remote.<name2>.<fetch/url> value
+        remote.<name2>.<url/fetch> value
+        ...
+    """
+    def __init__(self, list, name = 'Remote Source'):
+        self.dict = {}
+        _list = []
+        for r in list[:-1]:
+            _name_begin = 7 #skip the 'remote.'
+            _tmp = r.split()[0]
+            #the line is either a fetch or a url setting
+            if _tmp.rfind('.fetch') != -1: #it's a fetch setting
+                _name_end = -6 #location of '.fetch'
+                _key = 'fetch'
+            else: #it's a url setting
+                _name_end = -4 #location of '.url'
+                _key = 'url'
+            _value = r.split()[1]
+            _name = _tmp.strip(' \n')[_name_begin:_name_end]
+
+            if not self.dict.has_key(_name):
+                self.dict[_name] = {}
+            self.dict[_name][_key] = _value
+        for k in self.dict.keys():
+            _list.append( k + '\n\tfetch: ' + self.dict[k]['fetch']
+                            + '\n\turl: ' + self.dict[k]['url'])
+        super(RemoteSourceBall, self).__init__(_list, name)
+
+
 class GITError(Exception):
     """base class of all GitTool error exceptions"""
     def __init__(self, msg):
@@ -330,6 +365,8 @@ def select_branch(isremote = False):
                       ball = _listball, hl = _curbranch)
     if _ans == '/e': #user enters nothing, might think of quit
         exit()
+    if isinstance(_ans, str): #guarantee that we always return a list of selected branches
+        _ans = [_ans]
     return _branch_list, _ans
 
 def make_branch(branch):
@@ -452,6 +489,48 @@ def if_branch_exist(branch):
     return _tmp is not None
 
 #-------------------config helppers
+def change_remote():
+    _tmp = invoke(git.config(exp = '^remote\.*'))
+    _ball = RemoteSourceBall(_tmp.split('\n'))
+    _ans = get_answer(title = 'Remote List', prompt = 'Pick a remote setting',
+                      help = "this is to change the remote values of the current branch",
+                      ball = _ball)
+    _remote = _ans[0].split('\n')[0]
+    set_local('branch.%s.remote' % get_current_branch(), value = _remote)
+
+def get_configurations():
+    #local settings
+    if root_path():
+        _current_branch = get_current_branch()
+        _current_branch_remote = get_local('branch.%s.remote' % _current_branch)
+        _current_branch_merge = get_local('branch.%s.merge' % _current_branch)
+        _remote_branch = get_remote_branch(show_remote_path = True)
+        _repo_url = get_remote_url()
+    else:
+        _current_branch = _current_branch_remote = \
+        _current_branch_merge = _remote_branch = None
+    #global settings
+    _email = get_global('user.email')
+    _username = get_global('user.name')
+    _first_diff_tool = get_global('difftool.first')
+    _second_diff_tool = get_global('difftool.second')
+    _third_diff_tool = get_global('difftool.third')
+    #make up the output
+    _ret = ""
+    _ret += "current branch is %s\n" % _current_branch
+    _ret += "remote branch is %s\n" % _remote_branch
+    _ret += "remote repository url is %s\n" %  _repo_url
+    _ret += paint('yellow', "---Local Settings---\n")
+    _ret += "branch.%s.remote: %s\n" % (_current_branch, _current_branch_remote)
+    _ret += "branch.%s.merge: %s\n" % (_current_branch, _current_branch_merge)
+    _ret += paint('yellow', "---Global Settings---\n")
+    _ret += "user.name: %s\n" % _username
+    _ret += "user.email: %s\n" % _email
+    _ret += "difftool.first: %s\n" % _first_diff_tool
+    _ret += "difftool.second: %s\n" % _second_diff_tool
+    _ret += "difftool.third: %s\n" % _third_diff_tool
+    return _ret
+
 #set the config for a new branch
 def copy_branch_config(branch_to, branch_from):
     #check if the config is already there
@@ -678,8 +757,7 @@ def do_checkout_from_commit(ref):
     while not _new_branch: #force to input a name
         _new_branch = get_answer(prompt = "Give a name to the new branch")
     print("loading %s ..." % paint('red', ref))
-    #return invoke(git.checkout(target = ref, new_branch = _new_branch))
-    return make_branch(_new_branch)
+    return invoke(git.checkout(target = ref, new_branch = _new_branch))
 
 def do_patch(hash_str, patch_file):
     if not hash_str:
@@ -752,7 +830,6 @@ def push_to_remote():
     #TODO: code is missing to set up the configuration properly after push from a local branch
     _url = get_remote_url()
     _ref = get_remote_branch(show_remote_path = True)
-    pdb.set_trace()
     if _url is None:
         exit_with_error('config values are missing, you will need to manually fix this issue')
     else:
@@ -932,7 +1009,7 @@ def num_uncommited_files():
 def revert_file_item(item, unused):
     _file = item[item.rfind(' ') + 1:] #get the real file name
     _remove_from_list = False
-    if re.search('^_[MD]', item):    #not updated
+    if re.search('^_[MDT]', item):    #not updated
         invoke(git.checkout(target = _file))
         _remove_from_list = True
     elif re.search('^[MARCD]_', item): #index and worktree are the same, need to reset first
