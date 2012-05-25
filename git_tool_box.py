@@ -24,6 +24,7 @@ from githelper import *
 from optparse import OptionParser
 
 """
+TODO: when gsv to a remote branch, the configuration needs to update to linked to the remote repo
 TODO: when a branch name is origin, we should not name the linked 'remote' section to 'origin'!!
 TODO: enhance gcf so that user can change the configuration: remote/fetch/url/merge/difftool values easily
 TODO: where to put git blame?
@@ -144,6 +145,8 @@ def GITLoad(srv, param):
         _curbranch = get_current_branch()
         if len(param) == 2: #something is provided as the parameter
             _in_branch_list = param[1] in get_branch_list()[1]
+            if os.path.isfile(param[1]): #this is a patch file
+                return do_apply(param[1])
             if _ifbranch or _in_branch_list: #this is a local branch, or the user says so
                 return merge_or_checkout(param[1], _in_branch_list)
             if _iftag or _ifhash: #user says it is a tag, or a hash
@@ -155,8 +158,6 @@ def GITLoad(srv, param):
             if _remote_branch: #yes we find it
                 return do_fetch(ref = param[1])
             #TODO: can we support merging from a remote branch?
-            if os.path.isfile(param[1]): #this is a patch file
-                return do_apply(param[1])
             else: #the last possibility is...tag, try with fingers crossed...
                 _ans = get_answer(prompt = "Is %s a tag? [y/N]" % param[1])
                 if _ans == 'y' or _ans == 'Y':
@@ -243,20 +244,19 @@ def GITDiff(srv, param):
         for x in param[1:]: #looking for any hash info
             if re.search('^[0-9a-fA-F]+\.\.[0-9a-fA-F]+$', x) is not None:
                 _hashes = x #this seems like a <hash>..<hash> string
-                break
+                continue #get the hash string, check the rest parameters
             if re.search('^[0-9a-fA-F]+$', x):
                 if if_hash_exist(x): #this seems like a <hash> string
                     _curhash = get_hashes(1)[0]
                     _hashes = _curhash + '..' + x #make up the hash string
-                    break
+                    continue #get the hash string, check the rest parameters
                 else:
                     continue #cannot find the hash, keep checking the rest params
+            if os.path.isfile(x): #the file exist
+                _file = x
+                continue # get the file name, check the rest parameters
         if _ishash and not _hashes: #allow user to select hashes on the fly
             _hashes = select_hash_range()
-    for x in param[1:]:
-        if os.path.isfile(x): #the file exist
-            _file = x
-            break
     if _iscombined:
         _cmd = git.show(selection = _hashes, param = '-m --pretty=short', file = _file)
     else:
@@ -440,16 +440,16 @@ def GITConfig(srv, param):
         it is also possible to modify the values interatively with this tool.
         to set a config value, do:
             gcf <local/global> <section> <value>
-        gcfr to change the remote settings of the current branch.
+        gcfb to change the branch settings of the current branch.
     """
-    _if_change_remote = 'r' in srv
+    _if_change_branch = 'r' in srv
     if len(param) == 4: #set config value
         if param[1] == 'local': #set local value
             set_local(section = param[2], value = param[3])
         elif param[1] == 'global': #set global value
             set_global(section = param[2], value = param[3])
-    if _if_change_remote:
-        change_remote()
+    if _if_change_branch:
+        change_branch()
         print("Configuration has been changed to the following:\n")
     return get_configurations()
 
@@ -548,7 +548,7 @@ if __name__ == '__main__':
     #get the service requested by the user
     parser = OptionParser()
     service = parser.get_prog_name()
-    try:
+    if DEBUG:
         #a major service will always be a 3-character key word
         if service == 'ghelp':
             try:
@@ -564,5 +564,22 @@ if __name__ == '__main__':
                 print(result)
             except KeyError: #if no available service is found, try to install git-tool
                 GITSetup(sys.argv)
-    except Exception, err:
-        sys.stderr.write('ERROR: %s\n' % str(err))
+    else:
+        try:
+            #a major service will always be a 3-character key word
+            if service == 'ghelp':
+                try:
+                    print(CALL_TABLE[sys.argv[1][:3]].__doc__)
+                except Exception:
+                    print(__doc__)
+            else:
+                if len(sys.argv) == 2 and sys.argv[1] == '?':
+                    print(CALL_TABLE[service[:3]].__doc__)
+                    exit()
+                try:
+                    result = CALL_TABLE[service[:3]](service[3:], sys.argv)
+                    print(result)
+                except KeyError: #if no available service is found, try to install git-tool
+                    GITSetup(sys.argv)
+        except Exception, err:
+            sys.stderr.write('ERROR: %s\n' % str(err))

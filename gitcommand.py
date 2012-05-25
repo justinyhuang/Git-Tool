@@ -53,8 +53,8 @@ def branch(lsoption = None, del_branch = '', force_del_branch = '',
         return 'git branch --contains %s' % contains
     return 'git branch %s' % branch
 
-def push(repo, branch, ref):
-    return 'git push %s %s:%s' % (repo, branch, ref)
+def push(repo, branch, ref, param = ''):
+    return 'git push %s %s:%s %s' % (repo, branch, ref, param)
 
 def rebase(param = ''):
     return 'git rebase %s' % param
