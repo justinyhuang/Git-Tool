@@ -79,10 +79,10 @@ def GITSave(srv = '', param = ''):
             _ans=get_answer(prompt = 'Save to ' +\
                             paint('red', _current_branch) + ' ? [Y/n]',
                             default = 'y')
-            if _ans == 'n' or _ans == 'N':
+            if _ans.lower() == 'n':
                 _branch_list, _branches = select_branch()
                 _branch = _branches[0]
-                do_checkout_branch(selected_branch = _branch, in_list = False)
+                do_checkout_branch(target = _branch, in_list = False)
             if _iffile:#save some of the changed files
                 #_changed_files, _hash_str = get_hash_change(with_previous_hash = True)
                 _status, _hash_str = do_status()
@@ -117,9 +117,9 @@ def GITLoad(srv, param):
               When 'gld <patch_name>' in a git path
               'gld' will perform a git apply to take the patch into current working copy
 
-            * a git checkout/merge - load data from a branch, or by a hash/tag
+            * a git checkout - load data from a branch, or by a hash/tag
               When 'gld <ref_name>' in a git path, where a ref could be a branch/hash/tag
-              'gld' will perform a git checkout or merge
+              'gld' will perform a git checkout
               When 'gld <file_name> <hash_name>' in a git path, 'gld' will load the file
               from the given hash.
 
@@ -129,6 +129,7 @@ def GITLoad(srv, param):
             * gldh - to pick a hash (a.k.a commit/hash) from a list and do a checkout or merge
             * gldt - to pick a tag from list and do a checkout or merge [NOT IMPLEMENTED]
             * gldf - to load a file/files from a given hash
+            * gldm - to merge a branch to the current branch
 
         Do 'gld ?' to show this help message.
     """
@@ -137,6 +138,7 @@ def GITLoad(srv, param):
     _ifhash = 'h' in srv
     _iftag = 't' in srv
     _iffile = 'f' in srv
+    _ifmerge = 'm' in srv
     if not root_path(): #in a non-git path, do a clone (nothing else we could do, right?)
         if _ifbranch or _ifremote or _ifhash or _iftag:
             exit_with_error("You need to run the command in a git repo")
@@ -147,8 +149,10 @@ def GITLoad(srv, param):
             _in_branch_list = param[1] in get_branch_list()[1]
             if os.path.isfile(param[1]): #this is a patch file
                 return do_apply(param[1])
+            if _ifmerge: #user asks to do a merge
+                return merge_or_checkout(param[1], _in_branch_list, default_op = 'm')
             if _ifbranch or _in_branch_list: #this is a local branch, or the user says so
-                return merge_or_checkout(param[1], _in_branch_list)
+                return merge_or_checkout(param[1], _in_branch_list, default_op = 'c')
             if _iftag or _ifhash: #user says it is a tag, or a hash
                 return do_checkout_from_commit(param[1])
             if _ifremote: #user says it is a remote branch
@@ -160,7 +164,7 @@ def GITLoad(srv, param):
             #TODO: can we support merging from a remote branch?
             else: #the last possibility is...tag, try with fingers crossed...
                 _ans = get_answer(prompt = "Is %s a tag? [y/N]" % param[1])
-                if _ans == 'y' or _ans == 'Y':
+                if _ans.lower() == 'y':
                     return do_checkout_from_commit(param[1])
                 else:
                     exit_with_error("Don't know how to load [%s]" % param[1])
@@ -176,7 +180,7 @@ def GITLoad(srv, param):
                 _branch_list, _branches = select_branch(_ifremote)
                 _branch = _branches[0]
                 if _ifremote:# fetch from remote
-                    return do_checkout_branch(selected_branch = _branch,
+                    return do_checkout_branch(target = _branch,
                                               in_list = _branch in _branch_list,
                                               isremote = _ifremote)
                 else: #it is a local branch
@@ -203,7 +207,7 @@ def GITLoad(srv, param):
                                   default = 'y',
                                   help = "after the update, you can choose to either" +
                                          "merge or rebase your local changes")
-                if _ans != 'n' and _ans != 'N':
+                if _ans.lower() != 'n':
                     return update_local_branch()
                 else:
                     exit_with_error("Please tell me more. You know I don't know what you know :(")
@@ -239,7 +243,10 @@ def GITDiff(srv, param):
     if not _difftool: #try to get the default diff tool in this case
         _difftool = get_global('difftool.first')
     if _isremote: #handle remote diff operation
-        _remote_branch = get_remote_branch()
+        try:
+            _remote_branch = get_remote_branch()
+        except ConfigItemMissing:
+            exit_with_error("ERROR: your config file seems corrupted.")
     else: #handle non-remote diff
         for x in param[1:]: #looking for any hash info
             if re.search('^[0-9a-fA-F]+\.\.[0-9a-fA-F]+$', x) is not None:
@@ -267,7 +274,7 @@ def GITDiff(srv, param):
         _ans = get_answer(prompt = 'are you sure to diff about ' +
                                    paint('red', '%d' % _num) +
                                    ' files?[y/N]', default = 'n')
-        if _ans != 'y' and _ans != 'Y':
+        if _ans.lower() != 'y':
             exit()
     #for vim it appears we need to invoke it via os.system to make it work correctly
     if _difftool == 'vimdiff':
@@ -440,17 +447,22 @@ def GITConfig(srv, param):
         it is also possible to modify the values interatively with this tool.
         to set a config value, do:
             gcf <local/global> <section> <value>
-        gcfb to change the branch settings of the current branch.
+        gcfb to show the current branch name, faster than 'git branch'
+        gcfc to change the branch settings of the current branch. ##NOT YET TESTED
     """
-    _if_change_branch = 'r' in srv
+    _if_change_branch = 'c' in srv
+    _if_show_cur_branch = 'b' in srv
+    if _if_show_cur_branch:
+        return get_current_branch()
     if len(param) == 4: #set config value
         if param[1] == 'local': #set local value
             set_local(section = param[2], value = param[3])
         elif param[1] == 'global': #set global value
             set_global(section = param[2], value = param[3])
-    if _if_change_branch:
-        change_branch()
-        print("Configuration has been changed to the following:\n")
+    else:
+        if _if_change_branch:
+            change_branch()
+            print("Configuration has been changed to the following:\n")
     return get_configurations()
 
 #setup the environment for first use
@@ -472,7 +484,7 @@ def GITSetup(param):
         for c in color.keys():
             print(paint(c, c))
         _ans = get_answer(prompt = 'do you see the colors?[Y/n]', default = 'y')
-        if _ans == 'n' or _ans == 'N':
+        if _ans.lower() == 'n':
             set_global('GitTool.ColorSupport', 'no')
         else:
             set_global('GitTool.ColorSupport', 'yes')
@@ -519,11 +531,11 @@ def GITSetup(param):
 
 #a list of services provided to the user, via symbolic links
 SERVICES = [ 'gsv', 'gsvh', 'gsvf',
-             'gld', 'gldr', 'gldb', 'gldh', 'gldt', 'gldf',
+             'gld', 'gldr', 'gldb', 'gldh', 'gldt', 'gldf', 'gldm',
              'gst',
              ['gst' + x for x in allperm('dr')], #combination of 'd', 'r'
              ['gst' + x for x in allperm('br')], #combination of 'b', 'r'
-             'gcf', 'gcfr',
+             'gcf', 'gcfb', 'gcfc'
              'gls', 'glst', 'glsg',
              ['gls' + x for x in allperm('ad')], #combination of 'a', 'd'
              'gdi',
