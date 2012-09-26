@@ -24,6 +24,7 @@ from githelper import *
 from optparse import OptionParser
 
 """
+TODO: enhance gls to get a history of changes for a file, a function
 TODO: when gsv to a remote branch, the configuration needs to update to linked to the remote repo
 TODO: when a branch name is origin, we should not name the linked 'remote' section to 'origin'!!
 TODO: enhance gcf so that user can change the configuration: remote/fetch/url/merge/difftool values easily
@@ -254,8 +255,7 @@ def GITDiff(srv, param):
                 continue #get the hash string, check the rest parameters
             if re.search('^[0-9a-fA-F]+$', x):
                 if if_hash_exist(x): #this seems like a <hash> string
-                    _curhash = get_hashes(1)[0]
-                    _hashes = _curhash + '..' + x #make up the hash string
+                    _hashes = x #do the diff with the hash given
                     continue #get the hash string, check the rest parameters
                 else:
                     continue #cannot find the hash, keep checking the rest params
@@ -384,41 +384,42 @@ def GITStatus(srv, param):
 def GITList(srv, param):
     """
     gls
-    To show a list of commits with the information of:
-        * hash, author, date and comment.
-          'gls <n>' shows n latest commits' info.
-          When no parameter is given, shows that of the latest commit.
-          'gls <since index> <until index>' shows all the commits
-          between the two indexes.
+    To show a list of commit information.
+        * by specifying a range
+          'gls <other options> <n>' shows n latest commits' info.
+          When 'n' is not given, only the latest commit will be shown.
+          'gls <other options> <since index> <until index>'
+          shows all the commits between the two indexes.
           e.g 'gls 3 0' shows the commits from HEAD to the 3rd parent of HEAD
               'gls 7 4' shows the commits from the 4th parent to the 7th parent of HEAD
-        * hash, author, date, comment, branch and tag.
-          'glst <n>' or 'glst <since index> <until index>'
+        * by specifying file/directory names
+          'gls <file/dir_names> <other options>' shows commits to the files/directories
+        * by specifying the authors
+          'gls <author emails> <other options>'
+        * by asking for the tag info
+          'glst <other options>'
           shows more information including branches and tags, if there is any.
           However, fetching the tag info would take a bit more time.
-        * hash, committer and date in graphics.
-          'glsg <n>' or 'glsg <since index> <until index>'
-          shows a graphical commit tree.
+        * show commit information in a graph.
+          'glsg' shows a graphical commit tree.
+          Options can be given to specify a range
           *NOTE*: graphviz and qiv is required to enable the 'g' option
-        * hash, author, date and comment only from the given author.
-          'glsa <n>' or 'glsa <since index> <until index>'
-        * hash, author, date and comment during a period
-          'glsd' with or without other parameters
+        * show commit information between two dates
+          'glsd <other options>'
     """
     check_git_path()
     _if_graphic, _if_show_tag = ('g' in srv), ('t' in srv)
-    _if_author, _if_date = ('a' in srv), ('d' in srv)
+    _if_date = ('d' in srv)
     _since = _until = _num = 0
-    if _if_author:
-        _max_param = 4
-        _author = param[1]
-    else:
-        _author = ''
-        _max_param = 3
-    if len(param) == _max_param: #start and end of a hash segment is given.
-        _since, _until  = int(param[_max_param - 2]), int(param[_max_param - 1])
-    elif len(param) == _max_param - 1: #the number of hashes is given.
-        _num = int(param[_max_param - 2])
+    _digits = [int(x) for x in param[1:] if x.isdigit()]
+    _author = [x for x in param[1:] if '@' in x]
+    _file = [x for x in param[1:] if os.path.isfile(x) or
+                                 os.path.isdir(x)]
+    if len(_digits) == 2: #start and end of a history segment is given.
+        _since, _until  = _digits.sort(reverse=True)
+    elif len(_digits) == 1:
+        #the number of historys is given
+        _num = _digits[0]
     else: #default, show the latest hash info
         _num = 1
     if _if_graphic:
@@ -432,13 +433,18 @@ def GITList(srv, param):
             _range = "-%(num_of_log)d --skip=%(num_to_skip)d" %\
                     {'num_of_log': abs(_since - _until) + 1,
                      'num_to_skip': min(_since, _until) - 1}
+        if _file: #look for commit logs for given files
+            _range += ' -- %s ' % ' '.join(_file)
         if _if_show_tag: #show the tag info
             print("this will take a while...")
             _result = do_log_tag(_range)
-        elif _if_author or _if_date: #only show logs of given author
-            _result = do_log_author_or_date(_if_author, _if_date, _format,  _range, _author)
+        elif _author or _if_date: #only show logs of given author, or date
+            _result = do_log_author_or_date(_if_date, _format, _range, _author)
         else:
             _result = do_log(_range, _format)
+        if _file:
+            _result = "\n".join(_file) + ' changed in the commits below:\n'\
+                      + _result
         return _result
 
 def GITConfig(srv, param):

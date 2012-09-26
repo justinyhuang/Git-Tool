@@ -10,7 +10,7 @@ def difftool(difftool, hashes, remote_branch, file):
            {'t': difftool, 'h': hashes, 'r': remote_branch, 'f': file}
 
 def log(hash = '', num = 0, format = '', param = ''):
-    return 'git log %(num)s %(hash)s %(format)s %(other)s' %\
+    return 'git log %(num)s %(format)s %(other)s %(hash)s' %\
           {'num': ('-%d' % num) if num > 0 else '',
            'hash': hash if hash else '',
            'format': ("--format='%s'" % format) if format else '',

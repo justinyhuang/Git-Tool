@@ -715,11 +715,14 @@ def do_log(range, format):
     return invoke(git.log(hash = range, format = format, param = '--date=short'))
 
 def do_log_tag(range):
-    _cmd = git.log(hash = range, format = '%ad|%an|%h|%s|%d',
-                   param = '--abbrev-commit --date=short')
+    options = '--abbrev-commit --date=short'
+    _cmd = git.log(hash = range, format = '%ad|%an|%h|%s|%d', param = options)
     _logs = split(invoke(_cmd), '\n')[:-1]
     _result = ''
     for _line in _logs:
+        if '|' not in _line:
+            #TODO: handle the changed file info here
+            continue
         [_date, _author, _hash, _comment, _tmp] =\
                 _line.split('|') if _line else ['', '', '', '', '']
         _tmp = split(_tmp.strip(' ()'), ', ')
@@ -736,7 +739,7 @@ def do_log_tag(range):
                        (_hash, _author, _date, _branch, _comment)
     return _result
 
-def do_log_author_or_date(ifauthor, ifdate, format, range, author):
+def do_log_author_or_date(ifdate, format, range, authors):
     _options = ''
     if ifdate: #ask for the date range
         _d_start = get_answer(prompt = "Start Date: ",
@@ -747,8 +750,9 @@ def do_log_author_or_date(ifauthor, ifdate, format, range, author):
             _options += ' --after="%s"' % _d_start
         if re.match('^[\s]*[\d]{4}-[\d]{1,2}-[\d]{1,2}[\s]*$', _d_end): #the input is valid
             _options += ' --before="%s"' % _d_end
-    if ifauthor: #get the logs only with the given author name
-        _options += ' --author=%s' % author
+    if type(authors) is list and authors: #get the logs only with the given author name
+        for a in authors:
+            _options += ' --author=%s ' % a
     return invoke(git.log(hash = range, format = format,
                            param = '--date=short %s' % _options))
 
@@ -832,8 +836,11 @@ def do_checkout_from_commit(ref):
     ref = ref.strip(' \n\t')
     while not _new_branch: #force to input a name
         _new_branch = get_answer(prompt = "Give a name to the new branch")
-    print("loading %s ..." % paint('red', ref))
-    return do_checkout_branch(target = ref, new_branch = _new_branch)
+    #return do_checkout_branch(target = ref, new_branch = _new_branch, in_list = False)
+    _tmp =  invoke(git.checkout(target = ref, new_branch = _new_branch))
+    if 'fatal: git checkout:' in _tmp: #something wrong occur when checking out
+        exit_with_error(_tmp)
+    return _tmp
 
 def do_patch(hash_str, patch_file):
     if not hash_str:
@@ -928,9 +935,10 @@ def push_to_remote():
         #choose or specify a REF
         _refs = get_source_list('ref')
         _ball = RefSourceBall(_refs)
+        #TODO: FIX THE ISSUE HERE!!!
         _ref = get_answer(prompt = 'Select a REF to push',
                           title = ' Reference List ',
-                          ball = _ball)
+                          ball = _ball) #[0]
         if _ref not in [x.split()[0] for x in _refs]:
             #user type in a new item that is not in the ball list
             add_to_source_list('ref', _ref)
@@ -949,6 +957,8 @@ def push_to_remote():
             return invoke(_cmd)
         else:
             return "done"
+    else:
+        return _tmp #when the push is ok, return the git command result
 
 #-------------------hash helppers
 #take two hashes and return a valid hash string based on the age of the hashes
@@ -1136,19 +1146,19 @@ def remove_link_file(x):
 # Edit the following settings to make GITTool fits your need
 PROMPT_SIGN = ':> ' # unichr(0x263B) will show a smiling face.
 DEBUG = False
-COLOR = True if get_global('GitTool.ColorSupport') == 'yes' else False
+COLOR = False if get_global('GitTool.ColorSupport') == 'no' else True
 
 color = dict()
 color['none'] = ''
 if COLOR:
-    color['red'] = '\033[01;31m'
-    color['green'] = '\033[01;32m'
-    color['yellow'] = '\033[01;33m'
-    color['blue'] = '\033[01;34m'
-    color['magenta'] = '\033[01;35m'
-    color['lightblue'] = '\033[01;36m'
-    color['white'] = '\033[01;37m'
-    color['gray'] = '\033[01;30m'
+    color['red'] = '\033[31m'
+    color['green'] = '\033[32m'
+    color['yellow'] = '\033[33m'
+    color['blue'] = '\033[34m'
+    color['magenta'] = '\033[35m'
+    color['lightblue'] = '\033[36m'
+    color['white'] = '\033[37m'
+    color['gray'] = '\033[30m'
     _end_ = '\033[00m'
 else:
     color['red'] = ''
