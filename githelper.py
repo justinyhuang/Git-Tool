@@ -756,9 +756,10 @@ def do_log_author_or_date(ifdate, format, range, authors):
     return invoke(git.log(hash = range, format = format,
                            param = '--date=short %s' % _options))
 
-_dot_file = '/tmp/gittool.dotty.tmp'
+_dot_file = '/tmp/gittool.dot'
 _svg_file = '/tmp/gittool.dotty.svg'
 commit_index = 0
+
 def do_log_graphic(num, hash_from, hash_to):
     if num != 0:
         _range = 'HEAD' + num * '^' + '..HEAD' + ' --ancestry-path'
@@ -782,9 +783,13 @@ def do_log_graphic(num, hash_from, hash_to):
     _result = re.sub('BGCOLOR="bisque">', fill_commit_index, _result)
     with open(_dot_file, 'w') as f:
         f.write(_result)
-    _tmp = invoke('dot -Tsvg %s > %s' % (_dot_file, _svg_file))
-    _cmd = 'qiv ' + _svg_file
-    return invoke(_cmd, detached=True) #feed the data to dotty
+    try:
+        #make use of xdot.py from http://code.google.com/p/jrfonseca/
+        _cmd = 'xdot.py ' + _dot_file
+        return invoke(_cmd) #show the generated dot file
+    except OSError:
+        print("Seems like Graphviz has not been installed...")
+        sys.exit()
 
 def do_rebase(from_ref):
     print("rebasing from %s ..." % from_ref)
@@ -799,10 +804,11 @@ def do_merge(from_ref, to_ref = None):
     if not to_ref:
         to_ref = get_current_branch()
     #first check if the from ref is on the same branch of to_ref
-    _refs = invoke(git.branch(contains = from_ref)).split('\n')
-    for r in _refs:
-        if to_ref == r.strip(' *'):
-            exit_with_error("I cannot merge %s to %s" % (from_ref, to_ref))
+    #_refs = invoke(git.branch(contains = from_ref)).split('\n')
+    #for r in _refs:
+    #    if to_ref == r.strip(' *'):
+    #        exit_with_error("I cannot merge %s to %s, they are on the same branch."\
+    #                        % (from_ref, to_ref))
     print("merging from %s ..." % from_ref)
     if to_ref:#we need to first switch to the to ref
         do_checkout_branch(target = to_ref) #switch to the target branch

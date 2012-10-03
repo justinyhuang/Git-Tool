@@ -24,7 +24,6 @@ from githelper import *
 from optparse import OptionParser
 
 """
-TODO: enhance gls to get a history of changes for a file, a function
 TODO: when gsv to a remote branch, the configuration needs to update to linked to the remote repo
 TODO: when a branch name is origin, we should not name the linked 'remote' section to 'origin'!!
 TODO: enhance gcf so that user can change the configuration: remote/fetch/url/merge/difftool values easily
@@ -164,7 +163,8 @@ def GITLoad(srv, param):
                 return do_fetch(ref = param[1])
             #TODO: can we support merging from a remote branch?
             else: #the last possibility is...tag, try with fingers crossed...
-                _ans = get_answer(prompt = "Is %s a tag? [y/N]" % param[1])
+                _ans = get_answer(prompt = "Is %s a tag? [y/N]" % param[1],
+                                  default_op = 'n')
                 if _ans.lower() == 'y':
                     return do_checkout_from_commit(param[1])
                 else:
@@ -541,7 +541,7 @@ SERVICES = [ 'gsv', 'gsvh', 'gsvf',
              'gst',
              ['gst' + x for x in allperm('dr')], #combination of 'd', 'r'
              ['gst' + x for x in allperm('br')], #combination of 'b', 'r'
-             'gcf', 'gcfb', 'gcfc'
+             'gcf', 'gcfb', 'gcfc',
              'gls', 'glst', 'glsg',
              ['gls' + x for x in allperm('ad')], #combination of 'a', 'd'
              'gdi',
