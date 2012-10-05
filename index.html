@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <link href='https://fonts.googleapis.com/css?family=Chivo:900' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" type="text/css" href="stylesheets/stylesheet.css" media="screen" />
+    <link rel="stylesheet" type="text/css" href="stylesheets/pygment_trac.css" media="screen" />
+    <link rel="stylesheet" type="text/css" href="stylesheets/print.css" media="print" />
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <title>GitTool by justinyhuang</title>
+  </head>
+
+  <body>
+    <div id="container">
+      <div class="inner">
+
+        <header>
+          <h1>GitTool</h1>
+          <h2>Simply the use of Git, focus on your own work</h2>
+        </header>
+
+        <section id="downloads" class="clearfix">
+          <a href="https://github.com/justinyhuang/Git-Tool/zipball/master" id="download-zip" class="button"><span>Download .zip</span></a>
+          <a href="https://github.com/justinyhuang/Git-Tool/tarball/master" id="download-tar-gz" class="button"><span>Download .tar.gz</span></a>
+          <a href="https://github.com/justinyhuang/Git-Tool" id="view-on-github" class="button"><span>View on GitHub</span></a>
+        </section>
+
+        <hr>
+
+        <section id="main_content">
+          <p>Git, though powerful and popular, in most cases is too complicated to use. The command set is huge,
+the parameters are too many, the design is sophisticated and hense the learning period is too long.
+For some one who wants only a tool to manage his/her source code or document, to master Git and
+make it work requires too much learning.
+(I bet most of the Git users keep a ProGit or something similar on hand)
+I have many questions since using Git:
+    Why use different command for similar requests?
+    Why type long command + parameters when the requirement is simple?
+    What is 'stage' and why one has to understand this when all needed is to back up my changes?</p>
+
+<p>This is why GitTool is here.
+GitTool tries to simplify the use of git providing simple yet powerful interfaces to the user.
+GitTool learns Git so you don't have to =)</p>
+
+<p>TARGET USER
+GitTool is specialized for those who need to use git everyday but don't like to master the tool.
+These users only need git to help managing changes of their work, as well as communicating with
+others via Git. Spending time to know 1001 ways of using git is unacceptable for them.</p>
+
+<p>FEATURES</p>
+
+<ul>
+<li>
+<p>Easy, short yet powerful commands. In most cases a GitTool command varies from 3 to 5 characters
+Very few arguments are required. Some examples are given below as comparison: (what Git command
+will need to accomplish the same task?)</p>
+
+<p>To show changed but not commited files
+GitTool Command: gst</p>
+
+<p>To show changed files between working copy and the remote tracked branch
+GitTool Command: gstr</p>
+
+<p>To show changed files between working copy and version/branch xxx
+GitTool Command: gst xxx</p>
+
+<p>To check the logs of latest 3 commits
+GitTool Command: gls 3</p>
+
+<p>To check the logs of latest 3 commits, in a graphical version tree
+GitTool Command: glsg 3</p>
+
+<p>To do a diff of the changed files between version xxx and yyy
+GitTool Command: gdi xxx..yyy</p>
+
+<p>To do a diff with vimdiff in a remote-connection, and meld in a local workstation, and bc3 when
+someone like to see it in bcompare
+GitTool Command: gdi/gdi2/gdi3</p>
+
+<ul>
+<li>tools used in gdi/gdi2/gdi3 are set during installation of the tool</li>
+</ul>
+<p>and many other use cases....</p>
+</li>
+<li><p>Graphic git history presentation. A slightly better graphical presentation compared to those by other tools like gitk.
+For example, to show a graphical version tree of the last 10 nodes, 'gifg 10' will show you the graph.
+Powered by Graphviz and qiv.</p></li>
+<li><p>Iterative mode. In many cases you will be give a list of branches/changed files/repositories.
+You can manipulate branches/files/repositories easily with a few key strokes.</p></li>
+<li><p>View configuration similar to ClearCase. GitTool provides a means to select files from different commits/versions, yet with some version control capabilities. [to be implemented]</p></li>
+</ul><p>INSTALL
+"Why do I need to install?"
+GitTool works in a way similar to 'busybox'. That is, many symbolic links pointed to
+the same executable. It needs to know your bin directory to put the symbolic link
+files. GitTool have to backup your .gitconfig file before adding GitTool specific
+settings later. It also will ask for your preference to using the tool after setup,
+for example your choices of diff tools.</p>
+
+<p>Installing GitTool is simple. Just run 'git_tool_box.py' directly and answer
+the questions along the setup process. The tool will setup itself and ready for use.</p>
+
+<p>COLORED TEXT
+During the setup process, GitTool asks if colored text is supported in your environment,
+with an example of colored text. We recommend saying yes, as many GitTool features
+depend on the ability to show texts in different colors.</p>
+
+<p>PROMPT MODE
+There are many cases where you will be asked for choices or answers when GitTool shows
+a line and waits for your input with a prompt (by default it is a ':&gt;' sign). This is
+called the Prompt Mode in GitTool.
+GitTool enters the Prompt Mode when user intervention is required, and it tries to ask
+questions in the shortest way. Because as you use the tool, you become familiar with
+what it is asking. For new users, one can always try the</p>
+
+<p><em>help command</em>
+   When in Prompt Mode, type '\h' to get help messages if there is any. In you have
+   colored text enabled when setting up GitTool, there is an easy way to tell if help
+   message is available:
+   There is help messages if the prompt sign changes color.(default color with help is
+   light blue)</p>
+
+<p>Or if you decide to quit instead of answering the question, use the</p>
+
+<p><em>exit command</em>
+   When in Prompt Mode, type '\e' to safely exiting GitTool.</p>
+
+<p>There is yet another command that is useful in use cases like being shown a list of
+branches and you would like to delete one of them. That is the</p>
+
+<p><em>delete command</em>
+   When in the Prompt Mode and a lost of items are shown, type '\d' followed by the index
+   of the item to delete it, no matter what the item is: a branch, a history entry or
+   a file shown in a diff-file list (Right! That could be 'git checkout', or 'git reset',
+   or whatever effort you would pay to reverse a change you made to a file)</p>
+
+<p>HOWTO GET HELP
+After installation, 'ghelp' will show you a list of available services with a brief
+description. Use 'ghelp ' for detailed information of the corresponding command.
+You can also put a '?' after the command to get the help message, which is equal to
+'ghelp '</p>
+
+<p>I DONT LIKE IT
+'git_tool_box.py clean' will help you remove GitTool and recover your .gitconfig file.
+After that 'rm -fr </p>' and you won't see GitTool anymore.
+
+<p>But...why?</p>
+        </section>
+
+        <footer>
+          GitTool is maintained by <a href="https://github.com/justinyhuang">justinyhuang</a><br>
+          This page was generated by <a href="http://pages.github.com">GitHub Pages</a>. Tactile theme by <a href="http://twitter.com/jasonlong">Jason Long</a>.
+        </footer>
+
+        
+      </div>
+    </div>
+  </body>
+</html>
