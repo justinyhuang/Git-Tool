@@ -388,7 +388,7 @@ def GITList(srv, param):
         * by specifying a range
           'gls <other options> <n>' shows n latest commits' info.
           When 'n' is not given, only the latest commit will be shown.
-          'gls <other options> <since index> <until index>'
+          'gls <other options> <index 1> <index 2>'
           shows all the commits between the two indexes.
           e.g 'gls 3 0' shows the commits from HEAD to the 3rd parent of HEAD
               'gls 7 4' shows the commits from the 4th parent to the 7th parent of HEAD
@@ -401,9 +401,9 @@ def GITList(srv, param):
           shows more information including branches and tags, if there is any.
           However, fetching the tag info would take a bit more time.
         * show commit information in a graph.
-          'glsg' shows a graphical commit tree.
+          'glsg <range options>' shows a graphical commit tree.
           Options can be given to specify a range
-          *NOTE*: graphviz and qiv is required to enable the 'g' option
+          *NOTE*: graphviz is required to enable the 'g' option
         * show commit information between two dates
           'glsd <other options>'
     """
@@ -416,7 +416,8 @@ def GITList(srv, param):
     _file = [x for x in param[1:] if os.path.isfile(x) or
                                  os.path.isdir(x)]
     if len(_digits) == 2: #start and end of a history segment is given.
-        _since, _until  = _digits.sort(reverse=True)
+        _digits.sort(reverse=True)
+        _since, _until  = _digits
     elif len(_digits) == 1:
         #the number of historys is given
         _num = _digits[0]
@@ -426,7 +427,7 @@ def GITList(srv, param):
         do_log_graphic(_num, _since, _until)
         return ''
     else:
-        _format='___%nRev:       %h%nAuthor:    %an%nDate:      %cd%nComment:   %s'
+        _format='___%nRev:       %h%nAuthor:    %an [%ae]%nDate:      %cd%nComment:   %s'
         if _num != 0:
             _range = '-%d' % _num
         else:
@@ -443,8 +444,8 @@ def GITList(srv, param):
         else:
             _result = do_log(_range, _format)
         if _file:
-            _result = "\n".join(_file) + ' changed in the commits below:\n'\
-                      + _result
+            _result = paint('red', "\n".join(_file)) +\
+                      ' changed in the commits below:\n' + _result
         return _result
 
 def GITConfig(srv, param):
@@ -533,6 +534,8 @@ def GITSetup(param):
                 invoke("ln -s %(source)s %(link)s" %
                         {'source' : _source,
                          'link' : _target_dir+'/'+service})
+        #copy the supporing files
+        invoke("cp -R support/* %s" % _target_dir)
         print("done.\ntry ghelp for more info")
 
 #a list of services provided to the user, via symbolic links

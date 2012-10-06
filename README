@@ -6,11 +6,19 @@ make it work requires too much learning.
 I have many questions since using Git:
     Why use different command for similar requests?
     Why type long command + parameters when the requirement is simple?
-    What is 'stage' and why one has to understand this when all needed is to back up my changes?
+    What is 'stage'?
+    How do I know my changes are really safe?
+    Why do I have so many questions when all I need is simply to back up my work?
+    ...
 
 This is why GitTool is here.
 GitTool tries to simplify the use of git providing simple yet powerful interfaces to the user.
 GitTool learns Git so you don't have to =)
+
+DEMOS
+For visual folks, there are some video demos available:
+[Install Demo](http://youtu.be/LF0PA5XoRfQ)
+[GitList Demo](http://youtu.be/FzAex-pHJlE)
 
 TARGET USER
 GitTool is specialized for those who need to use git everyday but don't like to master the tool.
@@ -19,42 +27,75 @@ others via Git. Spending time to know 1001 ways of using git is unacceptable for
 
 FEATURES
 - Easy, short yet powerful commands. In most cases a GitTool command varies from 3 to 5 characters
-  Very few arguments are required. Some examples are given below as comparison: (what Git command
-  will need to accomplish the same task?)
+  Very few arguments are required. GitTool, in most cases, is smart enough to guess what
+  the parameters mean, so the order of the parameters doesn't matter. Some examples are given below
+  as comparison: (what Git command will need to accomplish the same task?)
 
-  To show changed but not commited files
-  GitTool Command: gst
+  To show the latest commit info
+  GitTool Command: gls
 
-  To show changed files between working copy and the remote tracked branch
-  GitTool Command: gstr
-
-  To show changed files between working copy and version/branch xxx
-  GitTool Command: gst xxx
-
-  To check the logs of latest 3 commits
+  To show the latest 3 commits info:
   GitTool Command: gls 3
 
-  To check the logs of latest 3 commits, in a graphical version tree
-  GitTool Command: glsg 3
+  To show commits from the 3rd to the 5th
+  GitTool Command: gls 3 5 (gls 5 3 also works)
 
-  To do a diff of the changed files between version xxx and yyy
-  GitTool Command: gdi xxx..yyy
+  To show the latest 3 commits by one, or several authors
+  GitTool Command: gls <author1 email> <author2 email> ... 3 
 
-  To do a diff with vimdiff in a remote-connection, and meld in a local workstation, and bc3 when
-  someone like to see it in bcompare
-  GitTool Command: gdi/gdi2/gdi3
-  * tools used in gdi/gdi2/gdi3 are set during installation of the tool
+  To show the latest 5 commits to a directory by the author
+  GitTool Command: gls <author email> <directory name> 5
+  again, gls <directory name> <author email> 5 will do the same
 
-  and many other use cases....
+  To show commits' relationship in a graph for the latest 5 commits
+  GitTool Command: glsg 5
 
-- Graphic git history presentation. A slightly better graphical presentation compared to those by other tools like gitk.
-  For example, to show a graphical version tree of the last 10 nodes, 'gifg 10' will show you the graph.
-  Powered by Graphviz and qiv.
+  To show commits from date1 to date2
+  GitTool Command: glsd (and GitTool will prompt to ask for the two dates)
+
+  This only showcases the use of 'gls', check out 'gld', 'gsv' and other commands for much more
+  exciting examples!
+
+- One command for similar uses. You don't have to remember Git's over 20 commands for daily use.
+  With GitTool, the number would be 5. Take 'gld' for example (again, think about what Git command
+  will need to accomplish the same task...)
+
+  To 'load' the latest version and apply to the current branch:
+  GitTool Command: gld
+
+  To 'load' a local branch:
+  GitTool Command: gld <branch_name>
+  or you could do 'gldb' to pick a branch from a list of the local branches
+
+  To 'load' a remote branch:
+  GitTool Command: gldr
+  and pick a branch from a list of the remote branches
+
+  To 'load' some changes from a patch file:
+  GitTool Command: gld <patch file name>
+
+  To 'load' new changes from another version/branch and perform a merge/rebase:
+  GitTool Command: gld <version hash>/<branch name>
+  
+  To 'load' a specific file from a given version:
+  GitTool Command: gld <filename> <version name>
+
+  Yes, the command 'gld' does all tasks related to 'load'.
+  This is the beauty of simplicity.
+
+- Graphic git history presentation. A slightly better graphical presentation compared to
+  those by other tools like gitk.
+  For example, to show a graphical version tree of the last 10 nodes, 'gifg 10' will
+  show you the graph.
+  Powered by Graphviz.
 
 - Iterative mode. In many cases you will be give a list of branches/changed files/repositories.
   You can manipulate branches/files/repositories easily with a few key strokes.
+  In many cases you could use '/h' to get a bit more help, and anytime you could type '/e' to
+  quit GitTool prompt.
 
-- View configuration similar to ClearCase. GitTool provides a means to select files from different commits/versions, yet with some version control capabilities. [to be implemented]
+- View configuration similar to ClearCase. GitTool provides a means to select files from
+  different commits/versions, yet with some version control capabilities. [I am working on this]
 
 INSTALL
 "Why do I need to install?"
@@ -64,13 +105,16 @@ files. GitTool have to backup your .gitconfig file before adding GitTool specifi
 settings later. It also will ask for your preference to using the tool after setup,
 for example your choices of diff tools.
 
+The installation will take care of all above.
+
 Installing GitTool is simple. Just run 'git_tool_box.py' directly and answer
 the questions along the setup process. The tool will setup itself and ready for use.
 
 COLORED TEXT
 During the setup process, GitTool asks if colored text is supported in your environment,
-with an example of colored text. We recommend saying yes, as many GitTool features
-depend on the ability to show texts in different colors.
+with an example of colored text. We recommend saying yes if you are using a terminal that
+supports colored texts, as many GitTool features highlights some key contents by using 
+different colors.
 
 PROMPT MODE
 There are many cases where you will be asked for choices or answers when GitTool shows
@@ -108,7 +152,9 @@ You can also put a '?' after the command to get the help message, which is equal
 'ghelp <command>'
 
 I DONT LIKE IT
-'git_tool_box.py clean' will help you remove GitTool and recover your .gitconfig file.
-After that 'rm -fr <dir of GitTool>' and you won't see GitTool anymore.
+Your previous gitconfig is named '.gitconfig.gittool.backup' in your home directory.
+Simply remove the directories where GitTool symbolic links and git_tool_box.py reside and
+you won't see GitTool anymore. 
 
+GitTool is green and uninstall is easy.
 But...why?

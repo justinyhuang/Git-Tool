@@ -716,7 +716,7 @@ def do_log(range, format):
 
 def do_log_tag(range):
     options = '--abbrev-commit --date=short'
-    _cmd = git.log(hash = range, format = '%ad|%an|%h|%s|%d', param = options)
+    _cmd = git.log(hash = range, format = '%ad|%an [%ae]|%h|%s|%d', param = options)
     _logs = split(invoke(_cmd), '\n')[:-1]
     _result = ''
     for _line in _logs:
@@ -750,21 +750,51 @@ def do_log_author_or_date(ifdate, format, range, authors):
             _options += ' --after="%s"' % _d_start
         if re.match('^[\s]*[\d]{4}-[\d]{1,2}-[\d]{1,2}[\s]*$', _d_end): #the input is valid
             _options += ' --before="%s"' % _d_end
+        range = 0 #with dates specified, no need for the range
     if type(authors) is list and authors: #get the logs only with the given author name
         for a in authors:
             _options += ' --author=%s ' % a
     return invoke(git.log(hash = range, format = format,
                            param = '--date=short %s' % _options))
 
+def _remove_unwanted_logs(log, start, end):
+    _list = log.split('\n')
+    _log_pointer = 0
+    _line_index = 0
+    _start_index = _end_index = 0
+    for line in _list:
+        _line_index += 1
+        if line.strip():
+            _blank_line = 0
+            continue
+        else:
+            _blank_line += 1
+            if _blank_line == 2:
+                _log_pointer += 1
+            else:
+                continue
+        if _log_pointer == start - 1:
+            _start_index = _line_index
+        if _log_pointer == end:
+            _end_index = _line_index - 1
+            break;
+    if _start_index == 0 or _end_index == 0:
+        print("oops, parsing the log went wrong")
+        sys.exit()
+    _tmp = _list[:2] + _list[_start_index:_end_index]
+    _result = '\n'.join(_tmp) + '\n}'
+    return _result
+
 _dot_file = '/tmp/gittool.dot'
 _svg_file = '/tmp/gittool.dotty.svg'
 commit_index = 0
 
 def do_log_graphic(num, hash_from, hash_to):
-    if num != 0:
-        _range = 'HEAD' + num * '^' + '..HEAD' + ' --ancestry-path'
+    #first get logs from HEAD to hash_from, we will remove the logs after hash_to later
+    if num == 0:
+        _range = 'HEAD' + hash_from * '^' + '..HEAD' + ' --ancestry-path'
     else:
-        _range = 'HEAD'+ hash_to  * '^' + '..HEAD' + hash_from * '^' + ' --ancestry-path'
+        _range = 'HEAD' + num * '^' + '..HEAD' + ' --ancestry-path'
     #_format = '"%h" [label="<f0> %h|{<f1> %an|<f2> %cd}"]\n"%h":f0 -> {%p}'
     _format = """"%h" [label=<<TABLE>
                             <TR><TD ROWSPAN="2" PORT="f0" BGCOLOR="bisque"> %h</TD>
@@ -781,6 +811,9 @@ def do_log_graphic(num, hash_from, hash_to):
     global commit_index
     commit_index = 0
     _result = re.sub('BGCOLOR="bisque">', fill_commit_index, _result)
+    if num == 0:
+        #we do the dirty trick here to remove the logs from HEAD to hash_to
+        _result = _remove_unwanted_logs(_result, hash_to, hash_from)
     with open(_dot_file, 'w') as f:
         f.write(_result)
     try:
