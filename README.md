@@ -31,27 +31,27 @@ others via Git. Spending time to know 1001 ways of using git is unacceptable for
 - Easy, short yet powerful commands. In most cases a GitTool command varies from 3 to 5 characters, very few arguments are required. GitTool, in most cases, is smart enough to guess what the parameters mean, so the order of the parameters doesn't matter. Some examples are given to show how GitTool commands work: (what Git command will need to accomplish the same task?)
 
   To show the latest commit info  
-```gls```
+      ```gls```
 
   To show the latest 3 commits info:  
-```gls 3```
+      ```gls 3```
 
   To show commits from the 3rd to the 5th  
-```gls 3 5```(gls 5 3 also works)
+      ```gls 3 5```(gls 5 3 also works)
 
   To show the latest 3 commits by one, or several authors  
-```gls <author1 email> <author2 email> ... 3 ```
+      ```gls <author1 email> <author2 email> ... 3 ```
 
   To show the latest 5 commits to a directory by the author  
-```gls <author email> <directory name> 5```  
+      ```gls <author email> <directory name> 5```  
   or  
-```gls <directory name> <author email> 5```
+      ```gls <directory name> <author email> 5```
 
   To show commits' relationship in a graph for the latest 5 commits  
-```glsg 5```
+      ```glsg 5```
 
   To show commits from date1 to date2  
-```glsd```  
+      ```glsd```  
   and GitTool will prompt to ask for the two dates.
 
   This only showcases the use of 'gls', check out 'gld', 'gsv' and other commands for much more
@@ -62,24 +62,24 @@ others via Git. Spending time to know 1001 ways of using git is unacceptable for
   will need to accomplish the same task...)
 
   To 'load' the latest version and apply to the current branch:  
-```gld```
+      ```gld```
 
   To 'load' a local branch:  
-```gld <branch_name>```  
+      ```gld <branch_name>```  
   or you could do 'gldb' to pick a branch from a list of the local branches.
 
   To 'load' a remote branch:  
-```gldr```  
+      ```gldr```  
   and pick a branch from a list of the remote branches.
 
   To 'load' some changes from a patch file:  
-```gld <patch file name>```
+      ```gld <patch file name>```
 
   To 'load' new changes from another version/branch and perform a merge/rebase:  
-```gld <version hash>/<branch name>```
+      ```gld <version hash>/<branch name>```
 
   To 'load' a specific file from a given version:  
-```gld <filename> <version name>```
+      ```gld <filename> <version name>```
 
   Yes, the command 'gld' does all tasks related to 'load'.  
   This is the beauty of simplicity.
