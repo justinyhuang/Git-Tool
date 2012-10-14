@@ -14,14 +14,12 @@ Dependencies (please install):
    git: Git-Tool is a wrapper of git
    graphviz and qiv: Git-Tool needs both to show graphical hash tree via glsg
 """
-import os
-import re
-import sys
+import os, re, sys, subprocess
+from optparse import OptionParser
 import pdb
-import subprocess
+#GitTool internal libs
 import gitcommand as git
 from githelper import *
-from optparse import OptionParser
 
 """
 TODO: when gsv to a remote branch, the configuration needs to update to linked to the remote repo
@@ -104,7 +102,7 @@ def GITLoad(srv, param):
     """ gld
         To 'load' new data into/as your current copy. A 'load' could be:
             * a git clone - load a repository to local path
-              When issued in a git path, with no parameter given
+              When issued in a non-git path, with no parameter given
               'gld' will perform a git clone.
 
             * a git fetch/pull/rebase - load new changes from remote repo to local
@@ -123,12 +121,12 @@ def GITLoad(srv, param):
               When 'gld <file_name> <hash_name>' in a git path, 'gld' will load the file
               from the given hash.
 
-        Not sure about the branch/hash/tag/file? Use the following for interative operation:
+        Not sure about the branch/hash/tag? Use the following for interative operation:
             * gldb - to pick a branch from a list and do a checkout or merge.
             * gldr - to fetch/merge a remote branch picked from list
+            * gldf - to get a file from a given hash, if there is any changes found
             * gldh - to pick a hash (a.k.a commit/hash) from a list and do a checkout or merge
             * gldt - to pick a tag from list and do a checkout or merge [NOT IMPLEMENTED]
-            * gldf - to load a file/files from a given hash
             * gldm - to merge a branch to the current branch
 
         Do 'gld ?' to show this help message.
@@ -136,8 +134,9 @@ def GITLoad(srv, param):
     _ifremote = 'r' in srv
     _ifbranch = 'b' in srv or _ifremote #when 'r' is given, 'b' automatically becomes True
     _ifhash = 'h' in srv
-    _iftag = 't' in srv
     _iffile = 'f' in srv
+    _iftag = 't' in srv
+    _ifref = _ifhash or _iftag or any(if_hash_exist(x) for x in param)
     _ifmerge = 'm' in srv
     if not root_path(): #in a non-git path, do a clone (nothing else we could do, right?)
         if _ifbranch or _ifremote or _ifhash or _iftag:
@@ -153,7 +152,7 @@ def GITLoad(srv, param):
                 return merge_or_checkout(param[1], _in_branch_list, default_op = 'm')
             if _ifbranch or _in_branch_list: #this is a local branch, or the user says so
                 return merge_or_checkout(param[1], _in_branch_list, default_op = 'c')
-            if _iftag or _ifhash: #user says it is a tag, or a hash
+            if _ifref: #user says it is a tag, or a hash
                 return do_checkout_from_commit(param[1])
             if _ifremote: #user says it is a remote branch
                 return do_fetch(ref = param[1])
@@ -189,17 +188,19 @@ def GITLoad(srv, param):
                                              in_list = _branch in _branch_list)
             elif _ifhash: #checkout a hash to a new branch
                 _hash = select_hash()
-                return merge_or_checkout(target = _hash, in_list = False)
+                return do_checkout_from_commit(_hash)
             elif _iftag: #checkout a tag to a new branch
                 exit_with_error("This feature is not supported, yet")
             elif _iffile: #checkout file/s from a hash
                 #promp to pick a hash
                 _changed_files, _hash_str = get_hash_change(with_current_hash = True)
                 _load_hash = _hash_str.split('..')[0]
+                if not _changed_files:
+                    return "The hash you choose is identical with your current version"
                 #prompt to pick files
                 _ball = FileBall(_changed_files.split('\n'))
                 _load_files = get_answer(title = ' File List ',
-                                         prompt = 'Select files to load: ',
+                                         prompt = 'Select the changed files to load: ',
                                          ball = _ball)
                 do_checkout_file_from_commit(_load_files, _load_hash)
                 return 'done'
@@ -542,8 +543,7 @@ def GITSetup(param):
 SERVICES = [ 'gsv', 'gsvh', 'gsvf',
              'gld', 'gldr', 'gldb', 'gldh', 'gldt', 'gldf', 'gldm',
              'gst',
-             ['gst' + x for x in allperm('dr')], #combination of 'd', 'r'
-             ['gst' + x for x in allperm('br')], #combination of 'b', 'r'
+             ['gst' + x for x in allperm('hdr')], #combination of 'h', 'd', 'r'
              'gcf', 'gcfb', 'gcfc',
              'gls', 'glst', 'glsg',
              ['gls' + x for x in allperm('ad')], #combination of 'a', 'd'

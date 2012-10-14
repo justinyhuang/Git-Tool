@@ -42,7 +42,7 @@ def mergetool(param = ''):
     return 'git mergetool %s' % param
 
 def branch(lsoption = None, del_branch = '', force_del_branch = '',
-                branch = '', contains = ''):
+                branch = '', contains = '', upstream = ''):
     if lsoption:
         return 'git branch -l %s' % lsoption
     if del_branch:
@@ -51,6 +51,8 @@ def branch(lsoption = None, del_branch = '', force_del_branch = '',
         return 'git branch -D %s' % force_del_branch
     if contains:
         return 'git branch --contains %s' % contains
+    if upstream and branch:
+        return 'git branch --set-upstream %s %s' % (branch, upstream)
     return 'git branch %s' % branch
 
 def push(repo, branch, ref, param = ''):
@@ -100,8 +102,8 @@ def commit(param):
 def lsremote(url, branch):
     return 'git ls-remote %s %s' % (url, branch)
 
-def apply(patch_file, check = False):
-    return 'git apply %s %s' % ('--check' if check else '', patch_file)
+def apply(patch_file, check = False, param = ''):
+    return 'git apply %s %s %s' % ('--check' if check else '', patch_file, param)
 
 def add(file):
     return 'git add %s' % file

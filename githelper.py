@@ -77,7 +77,7 @@ class UrlSourceBall(Ball):
     """
     A ball that holds and manages a list of url sources
     """
-    def __init__(self, list, name = 'URL Source'):
+    def __init__(self, list, name = 'url'):
         self.dict = {}
         _list = []
         for l in list:
@@ -237,7 +237,7 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
         else:
             _prompt = prompt
         _ans = raw_input(_prompt + _ps).strip()
-        if _ans == '/h':
+        if '/h' == _ans:
             print(help)
         elif '/e' == _ans:
             exit()
@@ -265,6 +265,8 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
             for x in _a_list:
                 if x < hl:
                     hl += 1
+        elif _ans == 'more':
+            return ['more']
         elif ball:
             _list = get_indexes(line = _ans)
             if _list:
@@ -378,19 +380,19 @@ def select_branch(isremote = False):
     return _branch_list, _ans
 
 def make_branch(branch):
-    _previous_branch = get_current_branch()
+    _parent_branch = get_current_branch()
+    _parent_remote = get_remote(_parent_branch)
     _tmp = invoke(git.branch(branch = branch)) #create branch with the name given
     _tmp = do_checkout_branch(target = branch)
-    #new branch, set the config properly
-    copy_branch_config(branch_to = branch, branch_from = _previous_branch)
     _result = 'created and switched to new branch: ' + paint('red', branch) + '\n'
-    _result += 'config is set based on ' + paint('red', _previous_branch)
+    _result += invoke(git.branch(branch = branch,
+                                 upstream = _parent_remote + '/' + _parent_branch))
     return _result
 
 #based on the remote and fetch values of the parent, set up the values for the new branch
 def link_branch_to_ref(bname, cur_branch, ref, local_ref, repo = ''):
     try:
-       _remote = get_local('branch.%s.remote' % cur_branch)
+       _remote = get_remote(cur_branch)
        _repo = repo if repo\
                     else get_local('remote.%s.url' % _remote)
     except ConfigItemMissing:
@@ -413,7 +415,7 @@ def update_local_branch():
     #1. fetch the updates from remote repo
     try:
        _current_branch = get_current_branch()
-       _remote = get_local('branch.%s.remote' % _current_branch)
+       _remote = get_remote(_current_branch)
     except ConfigItemMissing:
         exit_with_error("config item is missing, please report to the developer so that we can fix it!")
     print("fetching from %s ..." % _remote)
@@ -454,29 +456,9 @@ def get_branch_list(isremote = False):
         return _current, [x.strip('* ') for x in _branches if x != '']
 
 #based on git branch, to get the current git branch
-def get_current_branch(force = False):
-    if force:
-        #need to check by "git status", which will take some time
-        #but the return value is guaranteed to be correct
-        _first_line = split(invoke(git.status()), '\n')[0]
-        return split(_first_line)[-1] #last word of the first line is the branch name
-    else:
-        #instead of checking by "git status", we read the value from .config file
-        #this value will be updated whenever checkout() in gitcommand.py is invoked,
-        #as long as all the branch switching is done via checkout(), the value
-        #reflects the correct current branch information.
-        #and IT IS FAST!
-        if not root_path():
-            return ''
-        try:
-            _kkk =  get_local('core.CurrentBranch')
-            return _kkk
-        except ConfigItemMissing:
-            #in case the "cached" value is not there, we do it in the normal way
-            _first_line = split(invoke(git.status()), '\n')[0]
-            _cur_branch = split(_first_line)[-1] #last word of the first line is the branch name
-            set_local("core.CurrentBranch", value = _cur_branch)
-            return _cur_branch
+def get_current_branch():
+    _first_line = split(invoke(git.status()), '\n')[0]
+    return split(_first_line)[-1] #last word of the first line is the branch name
 
 def is_remote_branch(b):
     #TODO: check if we have network connected.
@@ -556,7 +538,7 @@ def get_configurations():
     if root_path():
         _current_branch = get_current_branch()
         try:
-            _current_branch_remote = get_local('branch.%s.remote' % _current_branch)
+            _current_branch_remote = get_remote(_current_branch)
             _current_branch_merge = get_local('branch.%s.merge' % _current_branch)
         except ConfigItemMissing:
             exit_with_error("config item is missing, please report to the developer so that we can fix it!")
@@ -591,13 +573,13 @@ def get_configurations():
 def copy_branch_config(branch_to, branch_from):
     #check if the config is already there
     try:
-        _read_remote = get_local('branch.%s.remote' % branch_to)
+        _read_remote = get_remote(branch_to)
         _read_merge = get_local('branch.%s.merge' % branch_to)
     except ConfigItemMissing:
         #set the config values if they are not set properly
         #read the values from the parent branch
         try:
-            _parent_remote = get_local('branch.%s.remote' % branch_from)
+            _parent_remote = get_remote(branch_from)
             _parent_url = get_local('remote.%s.url' % _parent_remote)
             _parent_fetch = get_local('remote.%s.fetch' % _parent_remote)
             _parent_merge = get_local('branch.%s.merge' % branch_from)
@@ -609,10 +591,17 @@ def copy_branch_config(branch_to, branch_from):
         set_local('remote.%s.url' % branch_to, _parent_url)
         set_local('remote.%s.fetch' % branch_to, _parent_fetch)
 
+#get the remote value for the corresponding branch
+def get_remote(branch):
+    try:
+        return get_local('branch.%s.remote' % branch)
+    except ConfigItemMissing:
+        return None
+
 #get the url of the corresponding remote repository
 def get_remote_url():
     try:
-        _remote = get_local('branch.%s.remote' % get_current_branch())
+        _remote = get_remote(get_current_branch())
         _url = get_local('remote.%s.url' % _remote)
         return _url
     except ConfigItemMissing:
@@ -621,7 +610,7 @@ def get_remote_url():
 #set the url of the corresponding remote repository
 def set_remote_url(url):
     try:
-        _remote = get_local('branch.%s.remote' % get_current_branch())
+        _remote = get_remote(get_current_branch())
     except ConfigItemMissing:
         exit_with_error("config item is missing, please report to the developer so that we can fix it!")
     set_local('remote.%s.url' % _remote, url)
@@ -639,7 +628,7 @@ def get_remote_branch(show_remote_path = False):
             else:
                 return _remote_branch
         else: # return the local copy path linked to the remote repo
-            _remote = get_local('branch.%s.remote' % _current_branch)
+            _remote = get_remote(_current_branch)
             _fetch = get_local('remote.%s.fetch' % _remote)
             _remote_copy, _local_copy = _fetch.split(':')
             if '*' in _local_copy: #this is a path with wildcard
@@ -688,7 +677,7 @@ def do_status(isremote = False, ishash = False, isdir = False, compare_str = '')
         #first fetch the latest copy, and compare locally
         print("comparing with the remote repository, please wait...")
         try:
-            _remote = get_local('branch.%s.remote' % get_current_branch())
+            _remote = get_remote(get_current_branch())
         except ConfigItemMissing:
             exit_with_error("ERROR: cannot find the remote branch in your config file")
         do_fetch(url = _remote)
@@ -872,13 +861,16 @@ def do_checkout_file_from_commit(files, hash):
 
 def do_checkout_from_commit(ref):
     _new_branch = ''
-    ref = ref.strip(' \n\t')
     while not _new_branch: #force to input a name
         _new_branch = get_answer(prompt = "Give a name to the new branch")
-    #return do_checkout_branch(target = ref, new_branch = _new_branch, in_list = False)
+    _parent_branch = get_current_branch()
+    _parent_remote = get_remote(_parent_branch)
+    ref = ref.strip(' \n\t')
     _tmp =  invoke(git.checkout(target = ref, new_branch = _new_branch))
     if 'fatal: git checkout:' in _tmp: #something wrong occur when checking out
         exit_with_error(_tmp)
+    _tmp += invoke(git.branch(branch = _new_branch,
+                              upstream = _parent_remote + '/' + _parent_branch))
     return _tmp
 
 def do_patch(hash_str, patch_file):
@@ -886,7 +878,7 @@ def do_patch(hash_str, patch_file):
         _file_list, hash_str = get_hash_change()
         print(_file_list)
         _ans = get_answer(prompt = 'Patch the change in these files? [y/N]', default = 'n')
-        if _ans is 'N' or _ans is 'n':
+        if _ans.lower() is 'n':
             exit()
     _tmp = invoke(git.patch(selection = hash_str, patch_file = patch_file))
     return '\npatch saved to %s' % patch_file
@@ -906,6 +898,15 @@ def do_apply(file):
     _tmp = invoke(git.apply(file, check = True))
     for line in _tmp.split('\n'):
         if 'does not apply' in line:
+            print("Attempt to load the patch failed.")
+            _ans = get_answer(prompt = "Would you like to try another loose apply? [Y/n]",
+                              default = 'y')
+            if _ans.lower() is 'n':
+                exit()
+    _tmp = invoke(git.apply(file, check = True,
+                            param = '--ignore-space-change --ignore-whitespace'))
+    for line in _tmp.split('\n'):
+        if 'does not apply' in line:
             exit_with_error("Loading the patch failed. Check the patch file")
     print("loading patch file %s ..." % paint('red', file))
     return invoke(git.apply(file))
@@ -920,7 +921,7 @@ def do_fetch(url = None, ref = None):
         _local_ref = ref.replace('refs/', 'refs/remotes/', 1)
         _cur_branch = get_current_branch()
         try:
-            _url = get_local('branch.%s.remote' % _cur_branch) #assume the same url
+            _url = get_remote(_cur_branch) #assume the same url
         except ConfigItemMissing:
             exit_with_error("config item is missing, please report to the developer so that we can fix it!")
         print("loading remote branch %s ..." % paint('red', ref))
@@ -1061,8 +1062,11 @@ def get_hashes(num):
 
 #check if a hash exists
 def if_hash_exist(ver):
-    _tmp = invoke(git.revparse(hash = ver))
-    return not re.search('unknown revision', _tmp)
+    _tmp = invoke(git.show(param = ver)).split('\n')[0]
+    if _tmp.startswith('fatal: ') or _tmp.strip() is None:
+        return False
+    else:
+        return _tmp
 
 #-------------------path helppers
 #get the root path of the current repository
@@ -1094,7 +1098,8 @@ def get_source_list(source):
 def delete_source(source, name):
     _len = get_global('sourcelist.%s.length' % name)
     for i in range(int(_len)):
-        if get_global('sourcelist.%s.item%d' % (name, i + 1)) == source:
+        _line = get_global('sourcelist.%s.item%d' % (name, i + 1))
+        if _line.split()[0] == source:
             set_global ('sourcelist.%s.item%d' % (name, i + 1), '')
             set_global('sourcelist.%s.length' % name, str(int(_len) - 1))
             return True, '[%s] deleted' % source
