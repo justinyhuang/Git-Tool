@@ -77,7 +77,7 @@ def GITSave(srv = '', param = ''):
             _ans=get_answer(prompt = 'Save to ' +\
                             paint('red', _current_branch) + ' ? [Y/n]',
                             default = 'y')
-            if _ans.lower() == 'n':
+            if _ans.lower() == 'n': #commit changes to another branch, not the current
                 _branch_list, _branches = select_branch()
                 _branch = _branches[0]
                 do_checkout_branch(target = _branch, in_list = False)
@@ -146,6 +146,9 @@ def GITLoad(srv, param):
         _curbranch = get_current_branch()
         if len(param) == 2: #something is provided as the parameter
             _in_branch_list = param[1] in get_branch_list()[1]
+            if _iffile and if_hash_exist(param[1]): #user provide a hash
+                _changed_files, _hash_str = get_hash_change(compare_this_with_current = param[1])
+                return pick_files_to_checkout(_changed_files, _hash_str)
             if os.path.isfile(param[1]): #this is a patch file
                 return do_apply(param[1])
             if _ifmerge: #user asks to do a merge
@@ -194,16 +197,7 @@ def GITLoad(srv, param):
             elif _iffile: #checkout file/s from a hash
                 #promp to pick a hash
                 _changed_files, _hash_str = get_hash_change(with_current_hash = True)
-                _load_hash = _hash_str.split('..')[0]
-                if not _changed_files:
-                    return "The hash you choose is identical with your current version"
-                #prompt to pick files
-                _ball = FileBall(_changed_files.split('\n'))
-                _load_files = get_answer(title = ' File List ',
-                                         prompt = 'Select the changed files to load: ',
-                                         ball = _ball)
-                do_checkout_file_from_commit(_load_files, _load_hash)
-                return 'done'
+                return pick_files_to_checkout(_changed_files, _hash_str)
             else: # if i have to guess, i will try updating the repo
                 _ans = get_answer(prompt = "Update current repository? [Y/n]",
                                   default = 'y',

@@ -1048,8 +1048,14 @@ def select_hash_range(with_current_hash = False, with_previous_hash = False):
     return ordered_hash_string(_base_hash, _current_hash)
 
 #get file differences between two hashes
-def get_hash_change(with_current_hash = False, with_previous_hash = False):
-    _hash_str = select_hash_range(with_current_hash = with_current_hash,
+def get_hash_change(with_current_hash = False,
+                    with_previous_hash = False,
+                    compare_this_with_current = ''):
+    if compare_this_with_current:
+        #select the current hash and the one to be compared
+        _hash_str = ordered_hash_string(get_hashes(1)[0], compare_this_with_current)
+    else:
+        _hash_str = select_hash_range(with_current_hash = with_current_hash,
                                   with_previous_hash = with_previous_hash)
     #list all changed files
     _file_list = invoke(git.diff(selection = _hash_str))
@@ -1078,6 +1084,12 @@ def root_path():
 def check_git_path():
     if root_path() is None:
         exit_with_error("It seems you are not in a git repository...")
+
+#change the directory to the top level of a git repo
+def go_root_path():
+    _tmp = invoke(git.revparse(param = '--show-toplevel'))
+    if 'Not a git repository' not in _tmp:
+        os.chdir(_tmp.strip())
 
 #-------------------source helppers
 #get the source list length
@@ -1123,6 +1135,19 @@ def increment_count(type, item):
     exit_with_error("Something is wrong: can't find the souce item!")
 
 #-------------------file helppers
+def pick_files_to_checkout(_changed_files, _hash_str):
+    _load_hash = _hash_str.split('..')[0]
+    if not _changed_files:
+        return "The hash you choose is identical with your current version"
+    #prompt to pick files
+    _ball = FileBall(_changed_files.split('\n'))
+    _load_files = get_answer(title = ' File List ',
+                             prompt = 'Select the changed files to load: ',
+                             ball = _ball)
+    go_root_path()
+    do_checkout_file_from_commit(_load_files, _load_hash)
+    return 'done'
+
 def number_of_changed_files(_hashes = '', _remote_branch = '', _file = ''):
     if _file:
         return 1
@@ -1151,7 +1176,7 @@ def num_uncommited_files():
 def revert_file_item(item, unused):
     _file = item[item.rfind(' ') + 1:] #get the real file name
     _remove_from_list = False
-    if re.search('^_[MDT]', item):    #not updated
+    if re.search('^[_M][MDT]', item):    #not updated
         invoke(git.checkout(target = _file))
         _remove_from_list = True
     elif re.search('^[MARCD]_', item): #index and worktree are the same, need to reset first
@@ -1176,7 +1201,7 @@ def revert_file_item(item, unused):
     elif item.strip().startswith('*'): #the file status is unknown other than 'changed'
         exit_with_error("don't know how to revert %s" % _file)
     else:
-        exit_with_error('oops, error when reverting file: %s' % item)
+        exit_with_error('oops, error when reverting file: %s' % _file)
     return _remove_from_list, '%s reverted' % _file
     #TODO: what to do if file is commited, but need to delete from a diff list
     #   this means we need to copy a specified hash to overwrite
