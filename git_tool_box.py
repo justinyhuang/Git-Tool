@@ -12,7 +12,7 @@ Available services:
    ghelp: help info for GITUtil
 Dependencies (please install):
    git: Git-Tool is a wrapper of git
-   graphviz and qiv: Git-Tool needs both to show graphical hash tree via glsg
+   graphviz: Git-Tool needs this tool to show graphical hash tree via glsg
 """
 import os, re, sys, subprocess
 from optparse import OptionParser
