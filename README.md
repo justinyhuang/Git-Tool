@@ -21,6 +21,7 @@ For visual folks, there are some video demos available:
 
 - [Install Demo](http://youtu.be/LF0PA5XoRfQ)
 - [GitList Demo](http://youtu.be/FzAex-pHJlE)
+- [GitSave Demo](http://youtu.be/c1CfdaY8ALM)
 
 #TARGET USER
 GitTool is specialized for those who need to use git everyday but don't like to master the tool.  
