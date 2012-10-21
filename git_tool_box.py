@@ -96,6 +96,7 @@ def GITSave(srv = '', param = ''):
                 do_commit(msg = _msg)
             return "Done"
         else: # there is no changed files, try a push
+            print(update_local_branch())
             return push_to_remote()
 
 def GITLoad(srv, param):
