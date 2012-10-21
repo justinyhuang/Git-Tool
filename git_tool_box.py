@@ -77,7 +77,7 @@ def GITSave(srv = '', param = ''):
             _ans=get_answer(prompt = 'Save to ' +\
                             paint('red', _current_branch) + ' ? [Y/n]',
                             default = 'y')
-            if _ans.lower() == 'n': #commit changes to another branch, not the current
+            if _ans.lower() == 'n':
                 _branch_list, _branches = select_branch()
                 _branch = _branches[0]
                 do_checkout_branch(target = _branch, in_list = False)
@@ -146,9 +146,6 @@ def GITLoad(srv, param):
         _curbranch = get_current_branch()
         if len(param) == 2: #something is provided as the parameter
             _in_branch_list = param[1] in get_branch_list()[1]
-            if _iffile and if_hash_exist(param[1]): #user provide a hash
-                _changed_files, _hash_str = get_hash_change(compare_this_with_current = param[1])
-                return pick_files_to_checkout(_changed_files, _hash_str)
             if os.path.isfile(param[1]): #this is a patch file
                 return do_apply(param[1])
             if _ifmerge: #user asks to do a merge
@@ -197,7 +194,16 @@ def GITLoad(srv, param):
             elif _iffile: #checkout file/s from a hash
                 #promp to pick a hash
                 _changed_files, _hash_str = get_hash_change(with_current_hash = True)
-                return pick_files_to_checkout(_changed_files, _hash_str)
+                _load_hash = _hash_str.split('..')[0]
+                if not _changed_files:
+                    return "The hash you choose is identical with your current version"
+                #prompt to pick files
+                _ball = FileBall(_changed_files.split('\n'))
+                _load_files = get_answer(title = ' File List ',
+                                         prompt = 'Select the changed files to load: ',
+                                         ball = _ball)
+                do_checkout_file_from_commit(_load_files, _load_hash)
+                return 'done'
             else: # if i have to guess, i will try updating the repo
                 _ans = get_answer(prompt = "Update current repository? [Y/n]",
                                   default = 'y',
@@ -289,11 +295,11 @@ def GITStatus(srv, param):
          'gsth' allows to select two hashes to show the changed files between them
        * working copy and the given commit/branch HEAD
          'gst <hash>' or 'gst <branch>' shows the changed files
-       * working copy and its tracked/linked remote
+       * working copy and its tracked/linked remote branch
          'gstr' shows the changed files
 
-    To only show changed files in current directory:
-         'gstd' will do the job.
+    To only show changed files in a directory:
+         'gst <options_above> <directory>'
     """
     _git_status_code =\
     """
@@ -341,10 +347,18 @@ def GITStatus(srv, param):
         * http://progit.org/book/ch2-2.html has more details
     """
     check_git_path()
-    _isdir, _isremote, _ishash = ('d' in srv), ('r' in srv), ('h' in srv)
-    _compare_str = param[1] if len(param) > 1 else ''
-    _status, _compare_str = do_status(isremote = _isremote, ishash = _ishash, isdir = _isdir,
+    _isremote, _ishash = ('r' in srv), ('h' in srv)
+    _dir, _compare_str = '', ''
+    for x in param[1:]: #currently there should be only two types of parameters
+        if os.path.isdir(x):
+            _dir = x
+        else:
+            _compare_str = x
+    _status, _compare_str = do_status(isremote = _isremote, ishash = _ishash, dir = _dir,
                                       compare_str = _compare_str)
+    err_str = 'unknown revision or path not in the working tree.'
+    if err_str in _status:
+        exit_with_error("%s: %s" % (_compare_str, err_str))
     _final_str = '' # prepare for a prettified outcome
     if _compare_str:#show changed files between two commits
         if '..' in _compare_str: #two compare candidates are given
@@ -536,8 +550,7 @@ def GITSetup(param):
 #a list of services provided to the user, via symbolic links
 SERVICES = [ 'gsv', 'gsvh', 'gsvf',
              'gld', 'gldr', 'gldb', 'gldh', 'gldt', 'gldf', 'gldm',
-             'gst',
-             ['gst' + x for x in allperm('hdr')], #combination of 'h', 'd', 'r'
+             'gst', 'gstr', 'gsth',
              'gcf', 'gcfb', 'gcfc',
              'gls', 'glst', 'glsg',
              ['gls' + x for x in allperm('ad')], #combination of 'a', 'd'
