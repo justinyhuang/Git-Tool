@@ -221,7 +221,7 @@ def get_indexes(line, operator = ''):
 #this function returns either a list or a string, the caller should understand well
 #what the return value could be and handle accordingly
 def get_answer(title = '', prompt = '', postfix = '', default = None,
-               help = '', ball = None, hl = -1):
+               help = '', ball = None, hl = -1, loop = True):
     if (ball and ball.help): # take the help if it is provided by the ball
         help += ball.help
     if not help: #no help is available
@@ -253,6 +253,8 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
             for x in _d_list:
                 if x < hl:
                     hl -= 1
+            if not loop: #quit looping, the caller will call again with updated data
+                return ''
         elif _ans.startswith('/a '):
             if ball is None:
                 NoBallFound.complain()
@@ -265,6 +267,8 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
             for x in _a_list:
                 if x < hl:
                     hl += 1
+            if not loop: #quit looping, the caller will call again with updated data
+                return ''
         elif _ans == 'more':
             return ['more']
         elif ball:

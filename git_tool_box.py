@@ -96,7 +96,6 @@ def GITSave(srv = '', param = ''):
                 do_commit(msg = _msg)
             return "Done"
         else: # there is no changed files, try a push
-            print(update_local_branch())
             return push_to_remote()
 
 def GITLoad(srv, param):
@@ -296,11 +295,11 @@ def GITStatus(srv, param):
          'gsth' allows to select two hashes to show the changed files between them
        * working copy and the given commit/branch HEAD
          'gst <hash>' or 'gst <branch>' shows the changed files
-       * working copy and its tracked/linked remote branch
+       * working copy and its tracked/linked remote
          'gstr' shows the changed files
 
-    To only show changed files in a directory:
-         'gst <options_above> <directory>'
+    To only show changed files in current directory:
+         'gstd' will do the job.
     """
     _git_status_code =\
     """
@@ -355,40 +354,40 @@ def GITStatus(srv, param):
             _dir = x
         else:
             _compare_str = x
-    _status, _compare_str = do_status(isremote = _isremote, ishash = _ishash, dir = _dir,
-                                      compare_str = _compare_str)
-    err_str = 'unknown revision or path not in the working tree.'
-    if err_str in _status:
-        exit_with_error("%s: %s" % (_compare_str, err_str))
-    _final_str = '' # prepare for a prettified outcome
-    if _compare_str:#show changed files between two commits
-        if '..' in _compare_str: #two compare candidates are given
-            _comp1, _comp2 = split(_compare_str, '..')
-        else:
-            if if_branch_exist(_compare_str): #only one candidate given, which is a branch
-                _comp2, _comp1 = _compare_str, get_current_branch()
-            elif 'unknown revision' in _status: #something wrong with the given candidate
-                exit_with_error('unknown hash/branch, please check')
-            else:#assume this is comparison between hashes
-                _comp1, _comp2 = _compare_str, get_hashes(1)[0]
-            if num_uncommited_files(): #show 'working copy' if there is any local change
-                _comp2 = 'working copy'
-        if not _status or not _status.strip(' '):
-            _status = '' #there is no changes found
-            _changes = 0
-        else:
-            _changes = len(split(_status, '\n')) - 1
-        _changed = split(_status, '\n')[:-1]
-        _untracked= []
-    else: #show changed but not yet commited files, with indexes added
-        _changed, _untracked= get_changed_files(_status)
-        _comp1, _comp2 = get_current_branch(), 'working copy'
-    _files = FileBall(_changed + _untracked)
-    _ans = get_answer(title = make_status_header(_comp1, _comp2),
-                      prompt = '',
-                      default = '/e',
-                      help = _git_status_code,
-                      ball = _files)
+    _ans = ''
+    while True and _ans != '/e': #keep do_status in the loop so that we update the status every time.
+        _status, _compare_str = do_status(isremote = _isremote, ishash = _ishash, isdir = _isdir,
+                                          compare_str = _compare_str)
+        _final_str = '' # prepare for a prettified outcome
+        if _compare_str:#show changed files between two commits
+            if '..' in _compare_str: #two compare candidates are given
+                _comp1, _comp2 = split(_compare_str, '..')
+            else:
+                if if_branch_exist(_compare_str): #only one candidate given, which is a branch
+                    _comp2, _comp1 = _compare_str, get_current_branch()
+                elif 'unknown revision' in _status: #something wrong with the given candidate
+                    exit_with_error('unknown hash/branch, please check')
+                else:#assume this is comparison between hashes
+                    _comp1, _comp2 = _compare_str, get_hashes(1)[0]
+                if num_uncommited_files(): #show 'working copy' if there is any local change
+                    _comp2 = 'working copy'
+            if not _status or not _status.strip(' '):
+                _status = '' #there is no changes found
+                _changes = 0
+            else:
+                _changes = len(split(_status, '\n')) - 1
+            _changed = split(_status, '\n')[:-1]
+            _untracked= []
+        else: #show changed but not yet commited files, with indexes added
+            _changed, _untracked= get_changed_files(_status)
+            _comp1, _comp2 = get_current_branch(), 'working copy'
+        _files = FileBall(_changed + _untracked)
+        _ans = get_answer(title = make_status_header(_comp1, _comp2),
+                          prompt = '',
+                          default = '/e',
+                          help = _git_status_code,
+                          ball = _files,
+                          loop = False)
     return ''
 
 def GITList(srv, param):
@@ -551,7 +550,8 @@ def GITSetup(param):
 #a list of services provided to the user, via symbolic links
 SERVICES = [ 'gsv', 'gsvh', 'gsvf',
              'gld', 'gldr', 'gldb', 'gldh', 'gldt', 'gldf', 'gldm',
-             'gst', 'gstr', 'gsth',
+             'gst',
+             ['gst' + x for x in allperm('hdr')], #combination of 'h', 'd', 'r'
              'gcf', 'gcfb', 'gcfc',
              'gls', 'glst', 'glsg',
              ['gls' + x for x in allperm('ad')], #combination of 'a', 'd'
