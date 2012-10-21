@@ -22,6 +22,7 @@ import gitcommand as git
 from githelper import *
 
 """
+TODO: improve the user experience when doing merge/solving conflicts
 TODO: when gsv to a remote branch, the configuration needs to update to linked to the remote repo
 TODO: when a branch name is origin, we should not name the linked 'remote' section to 'origin'!!
 TODO: enhance gcf so that user can change the configuration: remote/fetch/url/merge/difftool values easily
@@ -356,7 +357,7 @@ def GITStatus(srv, param):
             _compare_str = x
     _ans = ''
     while True and _ans != '/e': #keep do_status in the loop so that we update the status every time.
-        _status, _compare_str = do_status(isremote = _isremote, ishash = _ishash, isdir = _isdir,
+        _status, _compare_str = do_status(isremote = _isremote, ishash = _ishash, dir = _dir,
                                           compare_str = _compare_str)
         _final_str = '' # prepare for a prettified outcome
         if _compare_str:#show changed files between two commits
