@@ -1,9 +1,5 @@
 import gitcommand as git
-import subprocess
-import pdb
-import os
-import sys
-import re
+import subprocess, pdb, os, sys, re, math
 
 #-------------------INTERNAL CLASSES-------------------
 class Ball(object):
@@ -368,6 +364,40 @@ def translate_status_code(cmd, ori):
     else:
         return ''
 
+#to convert a git-relative path to relative path of the current directory
+def convert_relative_path(path, root_path, cur_path):
+    abs_path = root_path + '/' + path.strip()
+    if not cur_path.endswith('/'):
+        cur_path += '/'
+    if cur_path not in abs_path: #the file is not in current directory
+        common_path = os.path.commonprefix([cur_path, abs_path])
+        path_diff_str = re.sub('^%s' % common_path, '', cur_path)
+        path_diff = '..' + '..'.join(re.findall('/', path_diff_str))
+        return re.sub(common_path, path_diff, abs_path)
+    else:
+        return re.sub('^%s' % cur_path, '', abs_path)
+
+def process_git_diff_stat(raw):
+    git_path = root_path()
+    cur_path = os.getcwd()
+    if git_path is None:
+        exit_with_error("You are not in a Git repository")
+    result = {}
+    for line in [x.strip() for x in raw.split('\n')]:
+        if line == '':
+            continue
+        _add, _delete, _file = line.split()
+        #convert the git-relative-path to the relative-path to current directory
+        _relative_path = convert_relative_path(_file, git_path, cur_path)
+        #combine files that are in the same directory
+        _top_path = re.search('^[^/]+[/]*', _relative_path).group()
+        if _top_path in result.keys():
+            result[_top_path][0] += int(_add)
+            result[_top_path][1] += int(_delete)
+        else:
+            result[_top_path] = [int(_add), int(_delete)]
+    return result
+
 #-------------------branch helppers
 #select a branch from list
 #Returns: the complete branch list,
@@ -675,6 +705,25 @@ def remove_local(section):
     _tmp = invoke(git.config(type = 'local', section = section, value = ''))
 
 #-------------------functional blocks
+def draw_change_distribution(num_history, path = '.'):
+    range = 'HEAD%s..HEAD --numstat' % ('^' * int(num_history))
+    _tmp = invoke(git.diff(selection = range, name_only = False))
+    result = process_git_diff_stat(_tmp)
+    _max_change = max([sum(x) for x in result.values()])
+    _longest_name = max([len(x) for x in result.keys()])
+    _console_width = int(os.popen('stty size', 'r').read().split()[1])
+    _space_to_show_change = _console_width - _longest_name - 5
+    if _max_change > _space_to_show_change:
+        _formfactor = float(_max_change / _space_to_show_change * 2)
+    else:
+        _formfactor = 1.0
+    for file in result.keys():
+        _len_add = int(math.ceil(result[file][0] / _formfactor))
+        _len_delete = int(math.ceil(result[file][1] / _formfactor))
+        _lines_add = paint('green', '+' * _len_add) + str(result[file][0])
+        _lines_delete = paint('red', '-' * _len_delete) + str(result[file][1])
+        print("%s %s" % (file.ljust(_longest_name), (_lines_add + '|' + _lines_delete).ljust(_space_to_show_change)))
+
 def do_status(isremote = False, ishash = False, dir = '', compare_str = ''):
     _cmds, status = list(), ''
     if isremote: #comparing with the remote branch

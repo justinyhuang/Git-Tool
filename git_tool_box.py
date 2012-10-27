@@ -22,6 +22,7 @@ import gitcommand as git
 from githelper import *
 
 """
+TODO: offer more user defined options/settings in the configuration file
 TODO: improve the user experience when doing merge/solving conflicts
 TODO: when gsv to a remote branch, the configuration needs to update to linked to the remote repo
 TODO: when a branch name is origin, we should not name the linked 'remote' section to 'origin'!!
@@ -298,6 +299,8 @@ def GITStatus(srv, param):
          'gst <hash>' or 'gst <branch>' shows the changed files
        * working copy and its tracked/linked remote
          'gstr' shows the changed files
+       * 'gstg <number of versions to look back>' shows a distribution graph of changes
+         on files/directories
 
     To only show changed files in current directory:
          'gstd' will do the job.
@@ -348,8 +351,11 @@ def GITStatus(srv, param):
         * http://progit.org/book/ch2-2.html has more details
     """
     check_git_path()
-    _isremote, _ishash = ('r' in srv), ('h' in srv)
+    _isremote, _ishash, _isgraph = ('r' in srv), ('h' in srv), ('g' in srv)
     _dir, _compare_str = '', ''
+    if _isgraph: #show a change distribution graph on files/directories in the current path
+        draw_change_distribution(param[1] if len(param) > 1 else 1)
+        exit()
     for x in param[1:]: #currently there should be only two types of parameters
         if os.path.isdir(x):
             _dir = x
