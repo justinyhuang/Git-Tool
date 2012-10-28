@@ -19,7 +19,7 @@
 
         <header>
           <h1>GitTool</h1>
-          <h2>Simply the use of Git, focus on your own work</h2>
+          <h2>Simply use of Git, focus on real work</h2>
         </header>
 
         <section id="downloads" class="clearfix">
@@ -31,7 +31,8 @@
         <hr>
 
         <section id="main_content">
-          <p>Git, though powerful and popular, in most cases is too complicated to use. The command set is huge,
+          <p><img src="http://farm9.staticflickr.com/8469/8130350660_848616c23a_o.png" alt="Git-Tool">
+Git, though powerful and popular, in most cases is too complicated to use. The command set is huge,
 the parameters are too many, the design is sophisticated and hense the learning period is too long.
 For some one who wants only a tool to manage his/her source code or document, to master Git and
 make it work requires too much learning.<br>
@@ -74,46 +75,62 @@ others via Git. Spending time to know 1001 ways of using git is unacceptable for
 <li>
 <p>Easy, short yet powerful commands. In most cases a GitTool command varies from 3 to 5 characters, very few arguments are required. GitTool, in most cases, is smart enough to guess what the parameters mean, so the order of the parameters doesn't matter. Some examples are given to show how GitTool commands work: (what Git command will need to accomplish the same task?)</p>
 
-<p>To show the latest commit info<br><code>gls</code></p>
+<p>To show the latest commit info  </p>
 
-<p>To show the latest 3 commits info:<br><code>gls 3</code></p>
+<pre lang="gls```"><code>
+To show the latest 3 commits info:  
+  ```gls 3```
 
-<p>To show commits from the 3rd to the 5th<br><code>gls 3 5</code>(gls 5 3 also works)</p>
+To show commits from the 3rd to the 5th  
+  ```gls 3 5```(gls 5 3 also works)
 
-<p>To show the latest 3 commits by one, or several authors<br><code>gls &lt;author1 email&gt; &lt;author2 email&gt; ... 3</code></p>
+To show the latest 3 commits by one, or several authors  
+  ```gls &lt;author1 email&gt; &lt;author2 email&gt; ... 3 ```
 
-<p>To show the latest 5 commits to a directory by the author<br><code>gls &lt;author email&gt; &lt;directory name&gt; 5</code><br>
-or<br><code>gls &lt;directory name&gt; &lt;author email&gt; 5</code></p>
+To show the latest 5 commits to a directory by the author  
+  ```gls &lt;author email&gt; &lt;directory name&gt; 5```  
+or  
+  ```gls &lt;directory name&gt; &lt;author email&gt; 5```
 
-<p>To show commits' relationship in a graph for the latest 5 commits<br><code>glsg 5</code></p>
+To show commits' relationship in a graph for the latest 5 commits  
+  ```glsg 5```
 
-<p>To show commits from date1 to date2<br><code>glsd</code><br>
-and GitTool will prompt to ask for the two dates.</p>
+To show commits from date1 to date2  
+  ```glsd```  
+and GitTool will prompt to ask for the two dates.
 
-<p>This only showcases the use of 'gls', check out 'gld', 'gsv' and other commands for much more
-exciting examples!</p>
+This only showcases the use of 'gls', check out 'gld', 'gsv' and other commands for much more
+exciting examples!
+</code></pre>
 </li>
 <li>
 <p>One command for similar uses. You don't have to remember Git's over 20 commands for daily use.
 With GitTool, the number would be 5. Take 'gld' for example (again, think about what Git command
 will need to accomplish the same task...)</p>
 
-<p>To 'load' the latest version and apply to the current branch:<br><code>gld</code></p>
+<p>To 'load' the latest version and apply to the current branch:  </p>
 
-<p>To 'load' a local branch:<br><code>gld &lt;branch_name&gt;</code><br>
-or you could do 'gldb' to pick a branch from a list of the local branches.</p>
+<pre lang="gld```"><code>
+To 'load' a local branch:  
+  ```gld &lt;branch_name&gt;```  
+or you could do 'gldb' to pick a branch from a list of the local branches.
 
-<p>To 'load' a remote branch:<br><code>gldr</code><br>
-and pick a branch from a list of the remote branches.</p>
+To 'load' a remote branch:  
+  ```gldr```  
+and pick a branch from a list of the remote branches.
 
-<p>To 'load' some changes from a patch file:<br><code>gld &lt;patch file name&gt;</code></p>
+To 'load' some changes from a patch file:  
+  ```gld &lt;patch file name&gt;```
 
-<p>To 'load' new changes from another version/branch and perform a merge/rebase:<br><code>gld &lt;version hash&gt;/&lt;branch name&gt;</code></p>
+To 'load' new changes from another version/branch and perform a merge/rebase:  
+  ```gld &lt;version hash&gt;/&lt;branch name&gt;```
 
-<p>To 'load' a specific file from a given version:<br><code>gld &lt;filename&gt; &lt;version name&gt;</code></p>
+To 'load' a specific file from a given version:  
+  ```gld &lt;filename&gt; &lt;version name&gt;```
 
-<p>Yes, the command 'gld' does all tasks related to 'load'.<br>
-This is the beauty of simplicity.</p>
+Yes, the command 'gld' does all tasks related to 'load'.  
+This is the beauty of simplicity.
+</code></pre>
 </li>
 <li><p>Graphic git history presentation. A slightly better graphical presentation compared to those by other tools like gitk.<br>
 For example, to show a graphical version tree of the last 10 nodes, 'gifg 10' will show you the graph.<br>
