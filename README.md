@@ -1,3 +1,4 @@
+![Git-Tool](http://farm9.staticflickr.com/8469/8130350660_848616c23a_o.png)  
 Git, though powerful and popular, in most cases is too complicated to use. The command set is huge,
 the parameters are too many, the design is sophisticated and hense the learning period is too long.
 For some one who wants only a tool to manage his/her source code or document, to master Git and
