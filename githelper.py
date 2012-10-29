@@ -386,11 +386,15 @@ def process_git_diff_stat(raw):
     for line in [x.strip() for x in raw.split('\n')]:
         if line == '':
             continue
-        _add, _delete, _file = line.split()
+        _tmp = line.split()
+        _add, _delete = _tmp[0:2]
+        _file = ''.join(_tmp[2:]) #in case some filename contains space
         #convert the git-relative-path to the relative-path to current directory
         _relative_path = convert_relative_path(_file, git_path, cur_path)
         #combine files that are in the same directory
         _top_path = re.search('^[^/]+[/]*', _relative_path).group()
+        if '-' == _add or '-' == _delete:# this is a binary file change, ignore
+            continue
         if _top_path in result.keys():
             result[_top_path][0] += int(_add)
             result[_top_path][1] += int(_delete)
@@ -706,23 +710,20 @@ def remove_local(section):
 
 #-------------------functional blocks
 def draw_change_distribution(num_history, path = '.'):
-    range = 'HEAD%s..HEAD --numstat' % ('^' * int(num_history))
+    _change_len = 10
+    range = 'HEAD%s..HEAD --numstat' % ('~%s' % num_history)
     _tmp = invoke(git.diff(selection = range, name_only = False))
     result = process_git_diff_stat(_tmp)
-    _max_change = max([sum(x) for x in result.values()])
     _longest_name = max([len(x) for x in result.keys()])
-    _console_width = int(os.popen('stty size', 'r').read().split()[1])
-    _space_to_show_change = _console_width - _longest_name - 5
-    if _max_change > _space_to_show_change:
-        _formfactor = float(_max_change / _space_to_show_change * 2)
-    else:
-        _formfactor = 1.0
-    for file in result.keys():
-        _len_add = int(math.ceil(result[file][0] / _formfactor))
-        _len_delete = int(math.ceil(result[file][1] / _formfactor))
-        _lines_add = paint('green', '+' * _len_add) + str(result[file][0])
-        _lines_delete = paint('red', '-' * _len_delete) + str(result[file][1])
-        print("%s %s" % (file.ljust(_longest_name), (_lines_add + '|' + _lines_delete).ljust(_space_to_show_change)))
+    output = ['%s, %s, %s' % ("Item".center(_longest_name),
+                              paint('green', "Added".center(_change_len)),
+                              paint('red', "Deleted".center(_change_len)))]
+    for k, v in sorted(result.items(), key=lambda x: sum(x[1]), reverse=True):
+        output.append("%s, %s, %s" % (k.ljust(_longest_name),
+                                     str(v[0]).ljust(_change_len),
+                                     str(v[1]).ljust(_change_len)))
+    for line in output: #prints the result
+        print(line)
 
 def do_status(isremote = False, ishash = False, dir = '', compare_str = ''):
     _cmds, status = list(), ''
@@ -834,9 +835,9 @@ commit_index = 0
 def do_log_graphic(num, hash_from, hash_to):
     #first get logs from HEAD to hash_from, we will remove the logs after hash_to later
     if num == 0:
-        _range = 'HEAD' + hash_from * '^' + '..HEAD' + ' --ancestry-path'
+        _range = 'HEAD' + '~%d' % hash_from + '..HEAD' + ' --ancestry-path'
     else:
-        _range = 'HEAD' + num * '^' + '..HEAD' + ' --ancestry-path'
+        _range = 'HEAD' + '~%d' % num + '..HEAD' + ' --ancestry-path'
     #_format = '"%h" [label="<f0> %h|{<f1> %an|<f2> %cd}"]\n"%h":f0 -> {%p}'
     _format = """"%h" [label=<<TABLE>
                             <TR><TD ROWSPAN="2" PORT="f0" BGCOLOR="bisque"> %h</TD>

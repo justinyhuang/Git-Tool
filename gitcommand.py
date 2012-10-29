@@ -19,7 +19,7 @@ def log(hash = '', num = 0, format = '', param = ''):
 def patch(selection, patch_file):
     _param = selection
     _param += (' > %s' % patch_file) if patch_file else ''
-    return 'git format-patch -k --stdout %s' % _param
+    return 'git format-patch -k --full-index --stdout %s' % _param
 
 def clone(param):
     return 'git clone ' + param
