@@ -1,5 +1,8 @@
 import pdb
 
+def blame(file, param = ''):
+    return 'git blame %s %s' % (file, param)
+
 def diff(selection = '', name_only = True, type = 'ACDMRTUXB*'):
     return 'git diff %s %s %s' % (selection,
                                   '--name-only' if name_only else '',
@@ -8,6 +11,9 @@ def diff(selection = '', name_only = True, type = 'ACDMRTUXB*'):
 def difftool(difftool, hashes, remote_branch, file):
     return 'git difftool -y -t %(t)s %(h)s %(r)s %(f)s' %\
            {'t': difftool, 'h': hashes, 'r': remote_branch, 'f': file}
+
+def shortlog(param = ''):
+    return 'git shortlog %s' % param
 
 def log(hash = '', num = 0, format = '', param = ''):
     return 'git log %(num)s %(format)s %(other)s %(hash)s' %\

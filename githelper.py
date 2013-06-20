@@ -1,5 +1,5 @@
 import gitcommand as git
-import subprocess, pdb, os, sys, re, math
+import subprocess, pdb, os, sys, re, math, time, operator
 
 #-------------------INTERNAL CLASSES-------------------
 class Ball(object):
@@ -184,22 +184,25 @@ def allperm(inputstr):
 def split(str, sep = None):
     return str.split(sep) if str else []
 
+def get_stdout(pipe):
+    while(True):
+        retcode = pipe.poll() #returns None while subprocess is running
+        line = pipe.stdout.readline()
+        yield line
+        if(retcode is not None):
+            break
+
 #invoke bash commands
-def invoke(cmd, detached = False, need_error_and_out = False):
+def invoke(cmd, detached = False):
     if DEBUG == True: #for debug only
         print('>>> %s <<<' % cmd)
     if detached is False:
-        execution=subprocess.Popen([cmd],
-                                   shell=True, stdin=subprocess.PIPE,
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        o=execution.communicate()
-        if need_error_and_out: #return both stdout and stderr
-            return o[0], o[1]
-        else:
-            if o[1]: #return error if there is any
-                return o[1]
-            if o[0]: #only return the std result, when there is no error
-                return o[0]
+        execution=subprocess.Popen(cmd, shell=True,
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        result = ""
+        for line in get_stdout(execution):
+            result += line
+        return result
     else: #invoke bash commands in separate process, no error return
         subprocess.Popen(cmd.split(), stderr=subprocess.PIPE)
     return ""
@@ -498,6 +501,18 @@ def get_current_branch():
     _first_line = split(invoke(git.status()), '\n')[0]
     return split(_first_line)[-1] #last word of the first line is the branch name
 
+def get_active_branches(first_x = None):
+    _active_branches = {}
+    for b in get_branch_list()[1]:
+        _active_branches[b] = invoke(git.log(num = 1,
+                                             format = '%ci, %cr',
+                                             param = b)).split(',')
+    #sort the result by time, ignoring the 6-char ending time zone, e.g. ' +0800'
+    result = sorted(_active_branches.iteritems(),
+                    key = lambda(k, v): time.strptime(v[0][:-6], '%Y-%m-%d %H:%M:%S'),
+                    reverse = True)
+    return result[:first_x]
+
 def is_remote_branch(b):
     #TODO: check if we have network connected.
     _url = get_remote_url()
@@ -709,21 +724,6 @@ def remove_local(section):
     _tmp = invoke(git.config(type = 'local', section = section, value = ''))
 
 #-------------------functional blocks
-def draw_change_distribution(num_history, path = '.'):
-    _change_len = 10
-    range = 'HEAD%s..HEAD --numstat' % ('~%s' % num_history)
-    _tmp = invoke(git.diff(selection = range, name_only = False))
-    result = process_git_diff_stat(_tmp)
-    _longest_name = max([len(x) for x in result.keys()])
-    output = ['%s, %s, %s' % ("Item".center(_longest_name),
-                              paint('green', "Added".center(_change_len)),
-                              paint('red', "Deleted".center(_change_len)))]
-    for k, v in sorted(result.items(), key=lambda x: sum(x[1]), reverse=True):
-        output.append("%s, %s, %s" % (k.ljust(_longest_name),
-                                     str(v[0]).ljust(_change_len),
-                                     str(v[1]).ljust(_change_len)))
-    for line in output: #prints the result
-        print(line)
 
 def do_status(isremote = False, ishash = False, dir = '', compare_str = ''):
     _cmds, status = list(), ''
@@ -753,6 +753,56 @@ def do_status(isremote = False, ishash = False, dir = '', compare_str = ''):
         _tmp = translate_status_code(c, _tmp)
         status += _tmp[:_tmp.rfind('\n')] + '\n' if _tmp else ''
     return status, compare_str
+
+def get_file_change_distribution(num_history, first_x = None, path = '.'):
+    _change_len = 10 #assume there are at most 9999999999 changes to show
+    range = 'HEAD%s..HEAD --numstat' % ('~%s' % num_history)
+    _raw = invoke(git.diff(selection = range, name_only = False))
+    #print(_raw)
+    _tmp = process_git_diff_stat(_raw)
+    _longest_name = max([len(x) for x in _tmp.keys()])
+    result = ['%s, %s, %s' % ("Item".center(_longest_name),
+                              paint('green', "Added".center(_change_len)),
+                              paint('red', "Deleted".center(_change_len)))]
+    _all = sorted(_tmp.items(), key=lambda x: sum(x[1]), reverse=True)
+    for k, v in _all[:first_x]:
+        result.append("%s, %s, %s" % (k.ljust(_longest_name),
+                                     str(v[0]).ljust(_change_len),
+                                     str(v[1]).ljust(_change_len)))
+    return result
+
+def get_repo_age():
+    _tmp = invoke(git.log(format = '%cr', param = '--reverse'))
+    return re.search('^.+ago', _tmp).group()[:-4] #skip the ' ago'
+
+def get_active_contributors(first_x = None, recent_commits = None):
+    result = []
+    total_commit = 0
+    if recent_commits is not None:
+        total_commit = recent_commits
+        _tmp = {}
+        #get active contributors in the recent commits
+        _raw = invoke(git.log(num = recent_commits,
+                              format = '%an|<%ae>'))
+        for name, email in [line.split('|') for line in _raw.split('\n') if line]:
+            if _tmp.has_key(name):
+                _tmp[name][1] += 1
+            else:
+                _tmp[name] = [email, 1]
+        result = sorted(_tmp.iteritems(), key = lambda(k, v): v[1], reverse = True)
+        if first_x:
+            result = result[:first_x]
+        for record in result: #convert the commit counts to string
+            record[1][1] = str(record[1][1])
+    else:
+        _tmp = invoke(git.shortlog(param = '-s -n -e')).split('\n')
+        for line in [x.strip() for x in _tmp[:first_x]]:
+            _commits = re.search('^\d+', line).group()
+            _email = re.search('<.+>', line).group()
+            _name = line[line.find(_commits) + len(_commits): line.find(_email)]
+            result.append([_name.strip(), [_email, _commits]])
+            total_commit += int(_commits)
+    return total_commit, result
 
 def do_log(range, format):
     return invoke(git.log(hash = range, format = format, param = '--date=short'))
@@ -869,11 +919,11 @@ def do_log_graphic(num, hash_from, hash_to):
 
 def do_rebase(from_ref):
     print("rebasing from %s ..." % from_ref)
-    _stdout, _stderr = invoke(git.rebase(), need_error_and_out = True)
+    _stdout = invoke(git.rebase())
     if 'Failed to merge' in _stdout: #need manual merge
         os.system(git.mergetool())
         _tmp = 'Done'
-    return _stdout + _stderr
+    return _stdout
 
 #merge branch, assuming frombr and tobr are valid branches
 def do_merge(from_ref, to_ref = None):
@@ -1177,6 +1227,23 @@ def increment_count(type, item):
     exit_with_error("Something is wrong: can't find the souce item!")
 
 #-------------------file helppers
+def do_file_summary(file):
+    _buff = invoke(git.blame(file = file, param = '--show-stats'))
+    _lines = _buff.split('\n')
+    lines = len(_lines)
+    _contributors = {}
+    for l in _lines[:-3]:
+        c = l.split(' ')[2]
+        c = c.strip(' (')
+        if c in _contributors.keys():
+            _contributors[c] = _contributors[c] + 1
+        else:
+            _contributors[c] = 1
+    commits = _lines[-1].split('')[-1]
+    top_5_contributors = sorted(_contributors.iteritems(), key = operator.itemgetter(1))[:5]
+    age = 'unknown'
+    return top_5_contributors, lines, commits, age
+
 def number_of_changed_files(_hashes = '', _remote_branch = '', _file = ''):
     if _file:
         return 1
@@ -1185,12 +1252,18 @@ def number_of_changed_files(_hashes = '', _remote_branch = '', _file = ''):
 
 #return list of changed files and a list of untracked files from the output of 'git status -s'
 def get_changed_files(str):
+    git_path = root_path()
+    cur_path = os.getcwd()
     _changed_files, _untracked_files = [], []
     if str is not None:
         _changed_pattern = '^[_MDACUT]{1,2}' #modifed/deleted/added/copied/unmerged/type_changed
         _untracked_pattern = '^\?\?.*' #untracked files
+        #print(str)
         _file_list = split(str, '\n')[:-1]
         for x in _file_list:
+            #TODO: FIX THE GIT PATH HERE
+            #x = convert_relative_path(x, git_path, cur_path)
+            #print(x)
             _changed_files += [x] if re.search(_changed_pattern, x) else []
             _untracked_files += [x] if re.search(_untracked_pattern, x) else []
     return _changed_files, _untracked_files

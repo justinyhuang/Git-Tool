@@ -9,6 +9,7 @@ Available services:
    gst: Git STatus, list modified/added/removed files between hashes/branches
    gls: Git List, shows basic information of the current hash
    gcf: Git ConFig, shows the global settings and configuration of the working copy.
+   gsm: Git Summary, shows statistics of items in a Git repo
    ghelp: help info for GITUtil
 Dependencies (please install):
    git: Git-Tool is a wrapper of git
@@ -22,6 +23,7 @@ import gitcommand as git
 from githelper import *
 
 """
+TODO: when ask to pick two hashes (gsth, gdih, gsvh), ask the user to pick his "older" hash, and "newer" hash
 TODO: offer more user defined options/settings in the configuration file
 TODO: improve the user experience when doing merge/solving conflicts
 TODO: when gsv to a remote branch, the configuration needs to update to linked to the remote repo
@@ -38,6 +40,45 @@ TODO: check files in /usr/lib/git-core in workstation and see how to enable writ
 #-------------------SERVICE FUNCTIONS-------------------
 #All the service functions are linked directly to corresponding git-tool services.
 #No git command will be invoked in these functions.
+
+def GITSummary(srv = '', param = ''):
+    """ gsm
+        To show 'summary' of statistics of Git items.
+            * a simple 'gsm' will show a brief summary of the current repository.
+            * 'gsm <file name>' will show you a brief summary of the file.
+    """
+    if len(param) > 1: # there are additional parameters to the command
+        if os.path.isfile(param[1]): # we will do a summary on the file
+            _top_5_contributors, lines, commits, age = do_file_summary(param[1])
+        print( _top_5_contributors, lines, commits, age)
+    else: # just need a summary of the whole repository
+        #shows the age of the repo
+        title_age = paint('yellow', 'Repository Age>>>\n\t')
+        print(title_age + get_repo_age())
+        #shows top 5 active branches
+        title_curbranch = paint('yellow', 'Top3 Active Branch>>>\n\t')
+        _tmp = get_active_branches(first_x = 5)
+        _len_branch_name = max([len(x[0]) for x in _tmp])
+        _active_branches = ["%s %s" % (x[0].ljust(_len_branch_name), x[1][1].strip()) for x in _tmp]
+        print(title_curbranch + '\n\t'.join(_active_branches))
+        #shows top 5 contributors, use gsmc to show all contributors of the repo
+        title_contributor = paint('yellow', 'Top5 Active Contributors>>>\n\t')
+        total_commits, contributors = get_active_contributors(first_x = 10, recent_commits = 100)
+        _len_name = max([len(x[0]) for x in contributors])
+        _len_email = max([len(x[1][0]) for x in contributors])
+        _len_commits = max([len(x[1][1]) for x in contributors])
+        _list = '\n\t'.join(['%.2f%% %s %s' %
+                             (int(x[1][1])/float(total_commits),
+                              x[0].ljust(_len_name),
+                              x[1][0].ljust(_len_email))
+                             for x in contributors])
+        print(title_contributor + _list)
+        #shows top 3 touched file/dir, use gsmf to show all touched file/dir of the repo
+        title_files = paint('yellow', 'Top5 Active Files/Directories>>>\n\t')
+        _commit_range = total_commits if total_commits < 100 else 100
+        print(title_files + '\n\t'.join(get_file_change_distribution(_commit_range, first_x=5)))
+    return ''
+    #shows the total commit number of the repo
 
 def GITSave(srv = '', param = ''):
     """ gsv
@@ -302,8 +343,8 @@ def GITStatus(srv, param):
        * 'gstg <number of versions to look back>' shows a distribution graph of changes
          on files/directories
 
-    To only show changed files in current directory:
-         'gstd' will do the job.
+    To only show changed files in a given path?
+         'gstd <path>' will do the job.
     """
     _git_status_code =\
     """
@@ -354,7 +395,8 @@ def GITStatus(srv, param):
     _isremote, _ishash, _isgraph = ('r' in srv), ('h' in srv), ('g' in srv)
     _dir, _compare_str = '', ''
     if _isgraph: #show a change distribution graph on files/directories in the current path
-        draw_change_distribution(param[1] if len(param) > 1 else 1)
+        output = get_file_change_distribution(param[1] if len(param) > 1 else 1)
+        print('\n'.join(output))
         exit()
     for x in param[1:]: #currently there should be only two types of parameters
         if os.path.isdir(x):
@@ -565,6 +607,7 @@ SERVICES = [ 'gsv', 'gsvh', 'gsvf',
              'gdi',
              [ 'gdi' + x for x in allperm('2rh')], # combination of 'r','h','2'
              [ 'gdi' + x for x in allperm('3rh')], # combination of 'r','h','3'
+             'gsm',
              'ghelp' ]
 
 CALL_TABLE = { 'gst': GITStatus,
@@ -572,6 +615,7 @@ CALL_TABLE = { 'gst': GITStatus,
                'gsv': GITSave,
                'gld': GITLoad,
                'gdi': GITDiff,
+               'gsm': GITSummary,
                'gcf': GITConfig}
 
 if __name__ == '__main__':
