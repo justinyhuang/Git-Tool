@@ -197,7 +197,7 @@ def invoke(cmd, detached = False):
     if DEBUG == True: #for debug only
         print('>>> %s <<<' % cmd)
     if detached is False:
-        execution=subprocess.Popen(cmd, shell=True,
+        execution=subprocess.Popen(cmd, shell=True, bufsize = -1,
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         result = ""
         for line in get_stdout(execution):
@@ -725,6 +725,70 @@ def remove_local(section):
 
 #-------------------functional blocks
 
+months = ['Dec', 'Nov', 'Oct', 'Sept', 'Aug', 'Jul',
+          'Jun', 'May', 'Apr', 'Mar', 'Feb', 'Jan',
+          'Dec', 'Nov', 'Oct', 'Sept', 'Aug']
+days = ['Sun', 'Sat', 'Fri', 'Thu', 'Wed', 'Tue', 'Mon',
+        'Sun', 'Sat', 'Fri', 'Thu', 'Wed', 'Tue']
+def get_activity_distribution(author, time = 'monthly'):
+    _area_dist = ''
+    _time_dist = ''
+    # build the time distribution
+    # we could validate the user's email by checking "git log --format='%ae',
+    # but for performance consideration, we just don't check the email
+    if time == 'monthly':
+        _buff = invoke(git.log(authors=[author], format='%cd %h', param='--since="6 months ago"'))
+        if _buff == '':
+            _time_dist = '0 commits in the recent 6 months'
+        else:
+            _list_months = [x.split()[1] for x in _buff.split('\n') if x is not '']
+            _this_month = _list_months[0]
+            _index = months.index(_this_month)
+            _time_dict = dict((m, _list_months.count(m)) for m in months[_index : _index + 6])
+            for m in months[_index : _index + 6]:
+                _time_dist += '%s: %d commits\n\t' % (m, _time_dict[m])
+    elif time == 'daily':
+        _buff = invoke(git.log(authors=[author], format='%cd', param='--since="7 days ago"'))
+        if _buff == '':
+            _time_dist = '0 commits in the recent 7 days'
+        else:
+            _list_days = [x.split()[0] for x in _buff.split('\n') if x is not '']
+            _today = _list_days[0]
+            _index = days.index(_today)
+            _time_dict = dict((d, _list_days.count(d)) for d in days[_index : _index + 7])
+            for d in days[_index : _index + 7]:
+                _time_dist += '%s: %d commits\n\t' % (d, _time_dict[d])
+    elif time == 'weekly':
+        _week_buff = invoke(git.log(authors=[author], format='%cd', param='--since="1 week ago"'))
+        _commits = len(_week_buff.split('\n')) - 1
+        _time_dist += 'This week: %d commits \n\t' % _commits
+        for w in xrange(1, 5):
+            _since = '--since="%d week ago"' % (w + 1)
+            _until = '--until="%d week ago"' % w
+            _week_buff = invoke(git.log(authors=[author], format='%cd', param='%s %s' % (_since, _until)))
+            _commits = len(_week_buff.split('\n')) - 1
+            _time_dist += 'Previous %d week: %d\n\t' % (w, _commits)
+            _buff += _week_buff
+    # build the file distribution
+    _change_len = 10 #assume there are at most 9999999999 changes to show
+    first_x = 5
+    _hashes = [x.split()[-1] for x in _buff.split('\n') if x is not '']
+    _changed_files = ''
+    for h in _hashes:
+        _changed_files += invoke(git.diff(selection = '%(hash)s..%(hash)s^ --numstat' % {'hash': h},
+                                 name_only = False))
+    _area_dict = process_git_diff_stat(_changed_files)
+    _longest_name = max([len(x) for x in _area_dict.keys()])
+    _area_dist = ['%s, %s, %s' % ("Item".center(_longest_name),
+                              paint('green', "Added".center(_change_len)),
+                              paint('red', "Deleted".center(_change_len)))]
+    _all = sorted(_area_dict.items(), key=lambda x: sum(x[1]), reverse=True)
+    for k, v in _all[:first_x]:
+        _area_dist.append("%s, %s, %s" % (k.ljust(_longest_name),
+                                     str(v[0]).ljust(_change_len),
+                                     str(v[1]).ljust(_change_len)))
+    return _time_dist, _area_dist
+
 def do_status(isremote = False, ishash = False, dir = '', compare_str = ''):
     _cmds, status = list(), ''
     if isremote: #comparing with the remote branch
@@ -754,7 +818,7 @@ def do_status(isremote = False, ishash = False, dir = '', compare_str = ''):
         status += _tmp[:_tmp.rfind('\n')] + '\n' if _tmp else ''
     return status, compare_str
 
-def get_file_change_distribution(num_history, first_x = None, path = '.'):
+def get_file_change_distribution(num_history, first_x = None):
     _change_len = 10 #assume there are at most 9999999999 changes to show
     range = 'HEAD%s..HEAD --numstat' % ('~%s' % num_history)
     _raw = invoke(git.diff(selection = range, name_only = False))
@@ -832,7 +896,7 @@ def do_log_tag(range):
                        (_hash, _author, _date, _branch, _comment)
     return _result
 
-def do_log_author_or_date(ifdate, format, range, authors):
+def do_log_author_or_date(ifdate, format, range, authors = []):
     _options = ''
     if ifdate: #ask for the date range
         _d_start = get_answer(prompt = "Start Date: ",
@@ -844,10 +908,7 @@ def do_log_author_or_date(ifdate, format, range, authors):
         if re.match('^[\s]*[\d]{4}-[\d]{1,2}-[\d]{1,2}[\s]*$', _d_end): #the input is valid
             _options += ' --before="%s"' % _d_end
         range = 0 #with dates specified, no need for the range
-    if type(authors) is list and authors: #get the logs only with the given author name
-        for a in authors:
-            _options += ' --author=%s ' % a
-    return invoke(git.log(hash = range, format = format,
+    return invoke(git.log(hash = range, format = format, authors = authors,
                            param = '--date=short %s' % _options))
 
 def _remove_unwanted_logs(log, start, end):
@@ -1230,19 +1291,21 @@ def increment_count(type, item):
 def do_file_summary(file):
     _buff = invoke(git.blame(file = file, param = '--show-stats'))
     _lines = _buff.split('\n')
-    lines = len(_lines)
+    lines = len(_lines) - 4 # there are 4 extra lines other than those of the file
     _contributors = {}
-    for l in _lines[:-3]:
-        c = l.split(' ')[2]
-        c = c.strip(' (')
+    for l in _lines[:-4]: # only read the lines belong to the file
+        c = re.findall('\(.+ \d{4}-\d{2}-\d{2}', l)[0]
+        c = c[1:-11].strip()
         if c in _contributors.keys():
             _contributors[c] = _contributors[c] + 1
         else:
             _contributors[c] = 1
-    commits = _lines[-1].split('')[-1]
-    top_5_contributors = sorted(_contributors.iteritems(), key = operator.itemgetter(1))[:5]
+    commits = _lines[-2].split()[-1]
+    top_5_contributors = sorted(_contributors.iteritems(),
+                                key = operator.itemgetter(1),
+                                reverse = True) [:5]
     age = 'unknown'
-    return top_5_contributors, lines, commits, age
+    return top_5_contributors, lines, commits
 
 def number_of_changed_files(_hashes = '', _remote_branch = '', _file = ''):
     if _file:

@@ -46,37 +46,56 @@ def GITSummary(srv = '', param = ''):
         To show 'summary' of statistics of Git items.
             * a simple 'gsm' will show a brief summary of the current repository.
             * 'gsm <file name>' will show you a brief summary of the file.
+            * 'gsm <user email>' will show you a brief summary of the user/s
+               adding 'monthly', or 'weekly', or 'daily' at the end will show you the monthly,
+               weekly or daily distribution of the user/s' activities
+               the default interval is monthly
     """
     if len(param) > 1: # there are additional parameters to the command
+        _author = [x for x in param[1:] if '@' in x]
         if os.path.isfile(param[1]): # we will do a summary on the file
-            _top_5_contributors, lines, commits, age = do_file_summary(param[1])
-        print( _top_5_contributors, lines, commits, age)
+            _top_5_contributors, _lines, _commits = do_file_summary(param[1])
+            _list  = '\n\t'.join(['%.2f%% %s' %
+                                  (int(x[1])/float(_lines)*100, x[0])
+                                  for x in _top_5_contributors])
+            print(paint('yellow', 'Top5 Contributors>>>\n\t') + _list)
+            print(paint('yellow', 'Total Number of Lines>>>\n\t') + str(_lines))
+            print(paint('yellow', 'Total Number of Commits>>>\n\t') + _commits)
+        elif _author: # we will do a summary on the user
+            _interval = param[-1] if param[-1] in ['monthly', 'weekly', 'daily'] else 'monthly'
+            for a in _author:
+                _time_distribution, _area_distribution = get_activity_distribution(a, _interval)
+            if _interval == 'monthly':
+                print(paint('yellow', '6-Month Activities>>>\n\t') + _time_distribution)
+            elif _interval == 'weekly':
+                print(paint('yellow', '5-Week Activities>>>\n\t') + _time_distribution)
+            else:
+                print(paint('yellow', '7-Day Activities>>>\n\t') + _time_distribution)
+            print(paint('yellow', 'Top 5 Active Areas>>>\n\t') +
+                    '\n\t'.join(_area_distribution))
     else: # just need a summary of the whole repository
         #shows the age of the repo
-        title_age = paint('yellow', 'Repository Age>>>\n\t')
-        print(title_age + get_repo_age())
+        print(paint('yellow', 'Repository Age>>>\n\t') + get_repo_age())
         #shows top 5 active branches
-        title_curbranch = paint('yellow', 'Top3 Active Branch>>>\n\t')
         _tmp = get_active_branches(first_x = 5)
         _len_branch_name = max([len(x[0]) for x in _tmp])
         _active_branches = ["%s %s" % (x[0].ljust(_len_branch_name), x[1][1].strip()) for x in _tmp]
-        print(title_curbranch + '\n\t'.join(_active_branches))
-        #shows top 5 contributors, use gsmc to show all contributors of the repo
-        title_contributor = paint('yellow', 'Top5 Active Contributors>>>\n\t')
-        total_commits, contributors = get_active_contributors(first_x = 10, recent_commits = 100)
+        print(paint('yellow', 'Top5 Active Branch>>>\n\t') + '\n\t'.join(_active_branches))
+        #shows top 10 contributors, use gsmc to show all contributors of the repo
+        total_commits, contributors = get_active_contributors(first_x = 5, recent_commits = 100)
         _len_name = max([len(x[0]) for x in contributors])
         _len_email = max([len(x[1][0]) for x in contributors])
         _len_commits = max([len(x[1][1]) for x in contributors])
         _list = '\n\t'.join(['%.2f%% %s %s' %
-                             (int(x[1][1])/float(total_commits),
+                             (int(x[1][1])/float(total_commits)*100,
                               x[0].ljust(_len_name),
                               x[1][0].ljust(_len_email))
                              for x in contributors])
-        print(title_contributor + _list)
+        print(paint('yellow', 'Top5 Active Contributors (in 100 recent commits)>>>\n\t') + _list)
         #shows top 3 touched file/dir, use gsmf to show all touched file/dir of the repo
-        title_files = paint('yellow', 'Top5 Active Files/Directories>>>\n\t')
         _commit_range = total_commits if total_commits < 100 else 100
-        print(title_files + '\n\t'.join(get_file_change_distribution(_commit_range, first_x=5)))
+        print(paint('yellow', 'Top5 Active Areas (in 100 recent commits)>>>\n\t') +
+              '\n\t'.join(get_file_change_distribution(_commit_range, first_x=5)))
     return ''
     #shows the total commit number of the repo
 

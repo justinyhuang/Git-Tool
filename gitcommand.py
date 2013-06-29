@@ -15,11 +15,12 @@ def difftool(difftool, hashes, remote_branch, file):
 def shortlog(param = ''):
     return 'git shortlog %s' % param
 
-def log(hash = '', num = 0, format = '', param = ''):
-    return 'git log %(num)s %(format)s %(other)s %(hash)s' %\
+def log(hash = '', num = 0, format = '', param = '', authors = []):
+    return 'git log %(num)s %(format)s %(other)s %(hash)s %(authors)s' %\
           {'num': ('-%d' % num) if num > 0 else '',
            'hash': hash if hash else '',
            'format': ("--format='%s'" % format) if format else '',
+           'authors': ' --author=' + ' --author='.join(authors),
            'other': param if param else ''}
 
 def patch(selection, patch_file):
