@@ -18,11 +18,15 @@ Dependencies (please install):
 import os, re, sys, subprocess
 from optparse import OptionParser
 import pdb
-#GitTool internal libs
+#GitTool private libs
 import gitcommand as git
 from githelper import *
 
 """
+TODO: when listing hashes, provide the way to search for a hash that is far away in time
+TODO: when browsing hashes, provide the 'prev' command to go back to previous hash list
+TODO: when using 'gsv' in a non-git repo, invoke the 'git create' service
+TODO: when using 'gld', sometimes the git config is not set properly
 TODO: when ask to pick two hashes (gsth, gdih, gsvh), ask the user to pick his "older" hash, and "newer" hash
 TODO: offer more user defined options/settings in the configuration file
 TODO: improve the user experience when doing merge/solving conflicts
@@ -34,7 +38,6 @@ TODO: we need a solid config file to make sure git-tool is correctly working. fi
 TODO: need to consider the situation when the tool is used without a network connection: we will need to skip the checking of remote branches/repo's
 TODO: add the path of git-tool bin directory to PATH and the path of git-tool python files to PYTHONPATH, in gitsetup
 TODO: when there are a long list of remote branches, how would a user pick one easily?
-TODO: check files in /usr/lib/git-core in workstation and see how to enable write permission when doing vimdiff
 """
 
 #-------------------SERVICE FUNCTIONS-------------------

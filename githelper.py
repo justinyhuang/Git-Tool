@@ -12,7 +12,7 @@ class Ball(object):
         self.name = name
         self.help = "You can: \
           \n   Type the index of the %s or,\
-          \n   Type the name for a new %s or,\
+          \n   Type the name for a %s or,\
           \n   Use '/d <item_index>' to delete an %s or,\
           \n   Use '/e' to quit" % (self.name, self.name, self.name)
     def __getitem__(self, k):
@@ -224,7 +224,9 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
     if (ball and ball.help): # take the help if it is provided by the ball
         help += ball.help
     if not help: #no help is available
-        help = 'No help available... '
+        help = 'No help available for this case...\n'\
+             + "'/a' to add; '/d' to delete; '/m' for more\n"\
+             + "'/f' to find; '/h' for help; '/e' to exit"
         _ps = PROMPT_SIGN
     else: #show colored prompt if help is available
         _ps = paint('lightblue', PROMPT_SIGN)
@@ -268,8 +270,8 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
                     hl += 1
             if not loop: #quit looping, the caller will call again with updated data
                 return ''
-        elif _ans == 'more':
-            return ['more']
+        elif _ans.startswith('/m') or _ans.startswith('/f'):
+            return [_ans]
         elif ball:
             _list = get_indexes(line = _ans)
             if _list:
@@ -1166,6 +1168,12 @@ def push_to_remote():
         return _tmp #when the push is ok, return the git command result
 
 #-------------------hash helppers
+def get_log_index_by_hash(hash):
+    _current_hash = get_hashes(1)
+    _hashes_inbetween = do_log(range = '%s..HEAD' % hash,
+                               format = '%h')
+    return len(_hashes_inbetween.split('\n'))
+
 #take two hashes and return a valid hash string based on the age of the hashes
 def ordered_hash_string(h1, h2):
     _birthday1 = invoke(git.log(hash = h1, num = 1, format = '%ct'))
@@ -1185,16 +1193,29 @@ def select_hash(since = 7, until = 0):
         _format='Rev:       %h%n\tDate:     %cd%n\tComment:  %s|'
         _tmp = do_log(_range, _format)
         _ball = HashBall(_tmp.split('|\n')[:-1])
-        _ans = get_answer(title = ' Hash List ', default = 'more', ball = _ball,
-                          help = '   Enter directly or "more" for more hashes, or\n' +
-                                 '   "more <ID>" for further details of the hash, or\n')[0]
-        if _ans == 'more':
+        _ans = get_answer(title = ' Hash List ', default = '/m', ball = _ball,
+                          help = '   Enter directly or "/m" for more commits, or\n' +
+                                 '   "/m <ID>" for further details of the hash, or\n' +
+                                 '   "/f <commit hash>" to go to a specified commit\n')[0]
+        if _ans == '/m': # to show more older commits
             until = since
             since += _group_size
-        elif _ans.startswith('more'):
+        elif _ans.startswith('/m'): # to show detailed info about a commit
             _index = int(split(_ans)[-1])
             print(invoke(git.log(hash = _ball[_index], num = 1)))
             raw_input('Press Enter to continue...')
+        elif _ans.startswith('/f'): # to find a specific commit
+            if [] != re.findall('^/f\s*[0-9abcdef]{7,}$', _ans):
+                _hash = _ans.split()[1]
+                if if_hash_exist(_hash):
+                    until = get_log_index_by_hash(_hash)
+                    since = until + _group_size
+                    # find the commit by a hash
+                else:
+                    #print the error and return
+                    pass
+
+            _search_hash = _ans[1:]
         else:
             return _ans
         continue
