@@ -105,6 +105,9 @@ def GITSummary(srv = '', param = ''):
 def GITSave(srv = '', param = ''):
     """ gsv
         To 'save' your changes. A 'save' could be:
+            * a git init - create a new repository based on local files
+              When invoked in a non-git path, gsv will perform a git init.
+
             * a git commit - save to local repository
               When no parameter is given and there are changed files to commit,
               gsv will perform a git commit.
@@ -126,42 +129,46 @@ def GITSave(srv = '', param = ''):
     """
     _ifhash = ('h' in srv)
     _iffile = ('f' in srv)
-    _current_branch = get_current_branch()
-    if len(param) > 1: #user ask for generating a patch
-        if len(param) == 3: #both hash string and the file name is given
-            _hash_str, _patch_file = param[1], param[2]
-        else: #only file name is given, help him to pick two hashes
-            _hash_str, _patch_file = '', param[1]
-        return do_patch(_hash_str, _patch_file)
-    else: #no parameter is given
-        if _ifhash:#generate a patch
-            _patch_file = get_answer(prompt = 'Enter the name of the patch file:')
-            return do_patch('', _patch_file)
-        if num_uncommited_files(): #there are changed files to commit
-            _msg = get_answer(prompt = 'Any comment? [empty comment is not allowed]')
-            _ans=get_answer(prompt = 'Save to ' +\
-                            paint('red', _current_branch) + ' ? [Y/n]',
-                            default = 'y')
-            if _ans.lower() == 'n':
-                _branch_list, _branches = select_branch()
-                _branch = _branches[0]
-                do_checkout_branch(target = _branch, in_list = False)
-            if _iffile:#save some of the changed files
-                #_changed_files, _hash_str = get_hash_change(with_previous_hash = True)
-                _status, _hash_str = do_status()
-                _changed, _untracked= get_changed_files(_status)
-                _changed_files = _changed + _untracked
-                _ball = FileBall(_changed_files)
-                _save_files = get_answer(title = ' File List ',
-                                         prompt = 'Select files to save: ',
-                                         ball = _ball)
-                do_commit(files_to_save = _save_files, msg = _msg)
-                return 'done'
-            else: #save all changes
-                do_commit(msg = _msg)
-            return "Done"
-        else: # there is no changed files, try a push
-            return push_to_remote()
+    if not root_path(): #in a non-git path, do an init
+        do_init()
+        return GITConfig(srv = 'c', param = '') #to configure the repo
+    else: # in a git path
+        _current_branch = get_current_branch()
+        if len(param) > 1: #user ask for generating a patch
+            if len(param) == 3: #both hash string and the file name is given
+                _hash_str, _patch_file = param[1], param[2]
+            else: #only file name is given, help him to pick two hashes
+                _hash_str, _patch_file = '', param[1]
+            return do_patch(_hash_str, _patch_file)
+        else: #no parameter is given
+            if _ifhash:#generate a patch
+                _patch_file = get_answer(prompt = 'Enter the name of the patch file:')
+                return do_patch('', _patch_file)
+            if num_uncommited_files(): #there are changed files to commit
+                _msg = get_answer(prompt = 'Any comment? [empty comment is not allowed]')
+                _ans=get_answer(prompt = 'Save to ' +\
+                                paint('red', _current_branch) + ' ? [Y/n]',
+                                default = 'y')
+                if _ans.lower() == 'n':
+                    _branch_list, _branches = select_branch()
+                    _branch = _branches[0]
+                    do_checkout_branch(target = _branch, in_list = False)
+                if _iffile:#save some of the changed files
+                    #_changed_files, _hash_str = get_hash_change(with_previous_hash = True)
+                    _status, _hash_str = do_status()
+                    _changed, _untracked= get_changed_files(_status)
+                    _changed_files = _changed + _untracked
+                    _ball = FileBall(_changed_files)
+                    _save_files = get_answer(title = ' File List ',
+                                             prompt = 'Select files to save: ',
+                                             ball = _ball)
+                    do_commit(files_to_save = _save_files, msg = _msg)
+                    return 'done'
+                else: #save all changes
+                    do_commit(msg = _msg)
+                return "Done"
+            else: # there is no changed files, try a push
+                return push_to_remote()
 
 def GITLoad(srv, param):
     """ gld

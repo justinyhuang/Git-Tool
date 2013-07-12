@@ -563,30 +563,38 @@ def if_branch_exist(branch):
 #-------------------config helppers
 def change_branch():
     _tmp = invoke(git.config(exp = '^remote\.*'))
-    _ball = RemoteSourceBall(_tmp.split('\n'))
-    _ans = get_answer(title = 'Remote List', prompt = 'Pick a remote setting',
-                      help = "this is to change the remote values of the current branch",
-                      ball = _ball)
-    _remote = _ans[0].split('\n')[0]
-    bname = get_current_branch()
-    set_local('branch.%s.remote' % bname, value = _remote)
-    try:
-        _fetch_str = get_local('remote.%s.fetch' % _remote)
-    except ConfigItemMissing:
-        exit_with_error("config item is missing, please report to the developer so that we can fix it!")
-    _remote_path = _fetch_str.split(':')[0].strip('+')
-    if not '*' in _remote_path:
-        set_local('branch.%s.merge' % bname, value = _remote_path)
+    if _tmp == '': # no configure setting available, need to create one
+        _url = get_answer(prompt = 'Enter the URL of the remote repository')
+        set_local('remote.origin.url', _url)
+        _default_fetch = '+refs/heads/*:refs/remotes/origin/*'
+        set_local('remote.origin.fetch', _default_fetch)
+        set_local('branch.master.remote', 'origin')
+        set_local('branch.master.merge', 'refs/heads/master')
     else:
-        _ans = get_answer(prompt = 'Would you like to load from %smaster? [Y/n]' %\
-                                   _remote_path.strip('*'),
-                          default = 'Y')
-        if _ans.lower() == 'n':
-            _branch = get_answer(prompt = 'Enter the ' + paint('red', 'remote ') +
-                                          'branch name:')
+        _ball = RemoteSourceBall(_tmp.split('\n'))
+        _ans = get_answer(title = 'Remote List', prompt = 'Pick a remote setting',
+                          help = "this is to change the remote values of the current branch",
+                          ball = _ball)
+        _remote = _ans[0].split('\n')[0]
+        bname = get_current_branch()
+        set_local('branch.%s.remote' % bname, value = _remote)
+        try:
+            _fetch_str = get_local('remote.%s.fetch' % _remote)
+        except ConfigItemMissing:
+            exit_with_error("config item is missing, please report to the developer so that we can fix it!")
+        _remote_path = _fetch_str.split(':')[0].strip('+')
+        if not '*' in _remote_path:
+            set_local('branch.%s.merge' % bname, value = _remote_path)
         else:
-            _branch = 'master'
-        set_local('branch.%s.merge' % bname, value = _remote_path.replace('*', 'master'))
+            _ans = get_answer(prompt = 'Would you like to load from %smaster? [Y/n]' %\
+                                       _remote_path.strip('*'),
+                              default = 'Y')
+            if _ans.lower() == 'n':
+                _branch = get_answer(prompt = 'Enter the ' + paint('red', 'remote ') +
+                                              'branch name:')
+            else:
+                _branch = 'master'
+            set_local('branch.%s.merge' % bname, value = _remote_path.replace('*', 'master'))
 
 def get_configurations():
     #local settings
@@ -1113,6 +1121,18 @@ def do_clone():
     print("Cloning %s ..." % _url)
     invoke(git.clone(_url))
     return "Done"
+
+def do_init():
+    #show all files and prompt what to add into the initial commit
+    _files = FileBall(os.listdir('.'))
+    _new_files = get_answer(prompt = 'Select the files to be added into the new repository',
+                            title = 'File List',
+                            ball = _files)
+    invoke(git.init())
+    invoke(git.add(_new_files))
+    #do git commit
+    _msg = get_answer(prompt = 'Any comment? [empty comment is not allowed]')
+    do_commit(msg = _msg)
 
 def push_to_remote():
     #TODO: check if we have network connected.

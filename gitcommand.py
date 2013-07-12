@@ -23,6 +23,9 @@ def log(hash = '', num = 0, format = '', param = '', authors = []):
            'authors': ' --author=' + ' --author='.join(authors),
            'other': param if param else ''}
 
+def init(param = ''):
+    return 'git init %s' % param
+
 def patch(selection, patch_file):
     _param = selection
     _param += (' > %s' % patch_file) if patch_file else ''
@@ -113,4 +116,7 @@ def apply(patch_file, check = False, param = ''):
     return 'git apply %s %s %s' % ('--check' if check else '', patch_file, param)
 
 def add(file):
-    return 'git add %s' % file
+    if type(file) is list:
+        return 'git add %s' % ' '.join(file)
+    else:
+        return 'git add %s' % file
