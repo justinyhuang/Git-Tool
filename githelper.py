@@ -204,7 +204,7 @@ class Ball(object):
         print(prompt + string + '_')
         _operator = re.findall('^[\s\D]*', string) #it always returns something
         #get the height of the list
-        _height = len(self.list) + 1
+        _height = self.get_height() * len(self.list) + 1
         #move the cursor to the top of the list
         sys.stdout.write(self.term.UP * _height)
         #re-render the display list (might just make it a tmp buff)
@@ -214,8 +214,8 @@ class Ball(object):
             for x in _selection:
                 _buff[x] =_buff[x].replace('\t', '\t' + color['reverse']) + _end_
         #print the display list again from the current cursor position
-        print('\n'.join(_buff) + '\n')
-        sys.stdout.write(self.term.UP + self.term.CLEAR_EOL)
+        print('\n'.join(_buff))
+        sys.stdout.write(self.term.CLEAR_EOL)
         #sys.stdout.write(self.term.BOL + self.term.UP + self.term.CLEAR_EOL + string + self.term.CLEAR_EOL)
 
     def add(self, item_list, func): #children will take care of the implementation
@@ -236,6 +236,8 @@ class BranchBall(Ball):
         super(BranchBall, self).__init__(list, name)
     def delete(self, item_list):
         super(BranchBall, self).delete(item_list, delete_branch)
+    def get_height(self):
+        return 1
 
 class HashBall(Ball):
     """
@@ -248,6 +250,8 @@ class HashBall(Ball):
         return _firstline.split()[-1]
     def delete(self, item_list):
         exit_with_error("Deleting a hash is not allowed")
+    def get_height(self):
+        return 3
 
 class FileBall(Ball):
     """
@@ -265,6 +269,8 @@ class FileBall(Ball):
                 self.list[i] = re.sub('\?\?', 'A_', self.list[i])
     def delete(self, item_list):
         super(FileBall, self).delete(item_list, revert_file_item)
+    def get_height(self):
+        return 1
 
 class UrlSourceBall(Ball):
     """
@@ -448,14 +454,14 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
         if ball: # when a ball is given, show the item list in the ball.
             # we are drawing everything ourselves, so hide the system
             # cursor (we will draw a 'fake' one)
-            os.system('setterm -cursor off')
+            #os.system('setterm -cursor off')
             ball.paint_indexed_list(make_msg_bar(title),
                                     hl,
                                     postfix,
                                     prompt + _ps)
             _ans = ball.get_selection(_ps)
             #_ans = raw_input(prompt + _ps).strip()
-            os.system('setterm -cursor on')
+            #os.system('setterm -cursor on')
         else:
             _ans = raw_input(prompt + _ps).strip()
         #pdb.set_trace()
