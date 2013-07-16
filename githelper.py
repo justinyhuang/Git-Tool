@@ -1,5 +1,154 @@
 import gitcommand as git
-import subprocess, pdb, os, sys, re, math, time, operator
+import subprocess, pdb, os, sys, re, math, time, operator, termios
+
+# borrowed from
+# http://code.activestate.com/recipes/475116-using-terminfo-for-portable-color-output-cursor-co/
+class TerminalController:
+    """
+    A class that can be used to portably generate formatted output to
+    a terminal.  
+    
+    `TerminalController` defines a set of instance variables whose
+    values are initialized to the control sequence necessary to
+    perform a given action.  These can be simply included in normal
+    output to the terminal:
+
+        >>> term = TerminalController()
+        >>> print 'This is '+term.GREEN+'green'+term.NORMAL
+
+    Alternatively, the `render()` method can used, which replaces
+    '${action}' with the string required to perform 'action':
+
+        >>> term = TerminalController()
+        >>> print term.render('This is ${GREEN}green${NORMAL}')
+
+    If the terminal doesn't support a given action, then the value of
+    the corresponding instance variable will be set to ''.  As a
+    result, the above code will still work on terminals that do not
+    support color, except that their output will not be colored.
+    Also, this means that you can test whether the terminal supports a
+    given action by simply testing the truth value of the
+    corresponding instance variable:
+
+        >>> term = TerminalController()
+        >>> if term.CLEAR_SCREEN:
+        ...     print 'This terminal supports clearning the screen.'
+
+    Finally, if the width and height of the terminal are known, then
+    they will be stored in the `COLS` and `LINES` attributes.
+    """
+    # Cursor movement:
+    BOL = ''             #: Move the cursor to the beginning of the line
+    UP = ''              #: Move the cursor up one line
+    DOWN = ''            #: Move the cursor down one line
+    LEFT = ''            #: Move the cursor left one char
+    RIGHT = ''           #: Move the cursor right one char
+
+    # Deletion:
+    CLEAR_SCREEN = ''    #: Clear the screen and move to home position
+    CLEAR_EOL = ''       #: Clear to the end of the line.
+    CLEAR_BOL = ''       #: Clear to the beginning of the line.
+    CLEAR_EOS = ''       #: Clear to the end of the screen
+
+    # Output modes:
+    BOLD = ''            #: Turn on bold mode
+    BLINK = ''           #: Turn on blink mode
+    DIM = ''             #: Turn on half-bright mode
+    REVERSE = ''         #: Turn on reverse-video mode
+    NORMAL = ''          #: Turn off all modes
+
+    # Cursor display:
+    HIDE_CURSOR = ''     #: Make the cursor invisible
+    SHOW_CURSOR = ''     #: Make the cursor visible
+
+    # Terminal size:
+    COLS = None          #: Width of the terminal (None for unknown)
+    LINES = None         #: Height of the terminal (None for unknown)
+
+    # Foreground colors:
+    BLACK = BLUE = GREEN = CYAN = RED = MAGENTA = YELLOW = WHITE = ''
+    
+    # Background colors:
+    BG_BLACK = BG_BLUE = BG_GREEN = BG_CYAN = ''
+    BG_RED = BG_MAGENTA = BG_YELLOW = BG_WHITE = ''
+    
+    _STRING_CAPABILITIES = """
+    BOL=cr UP=cuu1 DOWN=cud1 LEFT=cub1 RIGHT=cuf1
+    CLEAR_SCREEN=clear CLEAR_EOL=el CLEAR_BOL=el1 CLEAR_EOS=ed BOLD=bold
+    BLINK=blink DIM=dim REVERSE=rev UNDERLINE=smul NORMAL=sgr0
+    HIDE_CURSOR=cinvis SHOW_CURSOR=cnorm""".split()
+    _COLORS = """BLACK BLUE GREEN CYAN RED MAGENTA YELLOW WHITE""".split()
+    _ANSICOLORS = "BLACK RED GREEN YELLOW BLUE MAGENTA CYAN WHITE".split()
+
+    def __init__(self, term_stream=sys.stdout):
+        """
+        Create a `TerminalController` and initialize its attributes
+        with appropriate values for the current terminal.
+        `term_stream` is the stream that will be used for terminal
+        output; if this stream is not a tty, then the terminal is
+        assumed to be a dumb terminal (i.e., have no capabilities).
+        """
+        # Curses isn't available on all platforms
+        try: import curses
+        except: return
+
+        # If the stream isn't a tty, then assume it has no capabilities.
+        if not term_stream.isatty(): return
+
+        # Check the terminal type.  If we fail, then assume that the
+        # terminal has no capabilities.
+        try: curses.setupterm()
+        except: return
+
+        # Look up numeric capabilities.
+        self.COLS = curses.tigetnum('cols')
+        self.LINES = curses.tigetnum('lines')
+        
+        # Look up string capabilities.
+        for capability in self._STRING_CAPABILITIES:
+            (attrib, cap_name) = capability.split('=')
+            setattr(self, attrib, self._tigetstr(cap_name) or '')
+
+        # Colors
+        set_fg = self._tigetstr('setf')
+        if set_fg:
+            for i,color in zip(range(len(self._COLORS)), self._COLORS):
+                setattr(self, color, curses.tparm(set_fg, i) or '')
+        set_fg_ansi = self._tigetstr('setaf')
+        if set_fg_ansi:
+            for i,color in zip(range(len(self._ANSICOLORS)), self._ANSICOLORS):
+                setattr(self, color, curses.tparm(set_fg_ansi, i) or '')
+        set_bg = self._tigetstr('setb')
+        if set_bg:
+            for i,color in zip(range(len(self._COLORS)), self._COLORS):
+                setattr(self, 'BG_'+color, curses.tparm(set_bg, i) or '')
+        set_bg_ansi = self._tigetstr('setab')
+        if set_bg_ansi:
+            for i,color in zip(range(len(self._ANSICOLORS)), self._ANSICOLORS):
+                setattr(self, 'BG_'+color, curses.tparm(set_bg_ansi, i) or '')
+
+    def _tigetstr(self, cap_name):
+        # String capabilities can include "delays" of the form "$<2>".
+        # For any modern terminal, we should be able to just ignore
+        # these, so strip them out.
+        import curses
+        cap = curses.tigetstr(cap_name) or ''
+        return re.sub(r'\$<\d+>[/*]?', '', cap)
+
+    def render(self, template):
+        """
+        Replace each $-substitutions in the given template string with
+        the corresponding terminal control string (if it's defined) or
+        '' (if it's not).
+        """
+        return re.sub(r'\$\$|\${\w+}', self._render_sub, template)
+
+    def _render_sub(self, match):
+        s = match.group()
+        if s == '$$': return s
+        else: return getattr(self, s[2:-1])
+
+################test######################
 
 #-------------------INTERNAL CLASSES-------------------
 class Ball(object):
@@ -10,6 +159,10 @@ class Ball(object):
     def __init__(self, list, name = 'item'):
         self.list = list     #all the data will be stored in a list
         self.name = name
+        self.highlight = 0
+        self.selected_list = []
+        self.display_list = []
+        self.term = TerminalController() # for better control of the terminal output
         self.help = "You can: \
           \n   Type the index of the %s or,\
           \n   Type the name for a %s or,\
@@ -21,6 +174,50 @@ class Ball(object):
         return self.list
     def get_indexed_list(self, highlight):
         return index_list(self.list, highlight = highlight)
+    def paint_indexed_list(self, title, highlight, postfix, prompt):
+        self.highlight = highlight
+        _buff = index_list(self.list, highlight = highlight)
+        print(title + '\n' +\
+              '\n'.join(_buff) + '\n' +\
+              (postfix + '\n' if postfix else '') + prompt + '_')
+        sys.stdout.write(self.term.UP)
+    def set_selected_indexed_list(self, highlight, selected_list):
+        self.highlight = highlight
+        self.selected_list = selected_list
+        pass
+    # for a ball we could do more when user providing the selection
+    # including highlighting the selection etc.
+    def get_selection(self, prompt):
+        _result = ''
+        _key = getkey()
+        while _key != '\n':
+            if ord(_key) == 127: # that is a backspace
+                _result = _result[:-1]
+            else:
+                _result += _key
+            self.highlight_selection(_result, prompt)
+            _key = getkey()
+        return _result
+    def highlight_selection(self, string, prompt):
+        sys.stdout.write(self.term.CLEAR_BOL)
+        #we need to display the customer's input as well
+        print(prompt + string + '_')
+        _operator = re.findall('^[\s\D]*', string) #it always returns something
+        #get the height of the list
+        _height = len(self.list) + 1
+        #move the cursor to the top of the list
+        sys.stdout.write(self.term.UP * _height)
+        #re-render the display list (might just make it a tmp buff)
+        _buff = index_list(self.list, highlight = self.highlight)
+        _selection = get_indexes(operator = _operator[0], line = string)
+        if _selection: # user has selected some items, highlight them
+            for x in _selection:
+                _buff[x] =_buff[x].replace('\t', '\t' + color['reverse']) + _end_
+        #print the display list again from the current cursor position
+        print('\n'.join(_buff) + '\n')
+        sys.stdout.write(self.term.UP + self.term.CLEAR_EOL)
+        #sys.stdout.write(self.term.BOL + self.term.UP + self.term.CLEAR_EOL + string + self.term.CLEAR_EOL)
+
     def add(self, item_list, func): #children will take care of the implementation
         pass
     def delete(self, item_list, func):
@@ -29,7 +226,7 @@ class Ball(object):
             _result, _msg = func(self[x], self.name)
             if _result is True: #user might choose not to delete
                 self.list.remove(self[x])
-            print _msg
+            print(_msg)
 
 class BranchBall(Ball):
     """
@@ -192,6 +389,23 @@ def get_stdout(pipe):
         if(retcode is not None):
             break
 
+# to get a pressed key without the 'enter'
+def getkey():
+    TERMIOS = termios
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    new = termios.tcgetattr(fd)
+    new[3] = new[3] & ~TERMIOS.ICANON & ~TERMIOS.ECHO
+    new[6][TERMIOS.VMIN] = 1
+    new[6][TERMIOS.VTIME] = 0
+    termios.tcsetattr(fd, TERMIOS.TCSANOW, new)
+    c = None
+    try:
+        c = os.read(fd, 1)
+    finally:
+        termios.tcsetattr(fd, TERMIOS.TCSAFLUSH, old)
+    return c
+
 #invoke bash commands
 def invoke(cmd, detached = False):
     if DEBUG == True: #for debug only
@@ -209,7 +423,7 @@ def invoke(cmd, detached = False):
 
 def get_indexes(line, operator = ''):
     #space, '-' or ',' is used as separator
-    if re.search('^' + operator + '\d+([\s,-]+\d+)*\s*$', line):
+    if re.search('^' + operator + '\s*\d+([\s,-]+\d+)*\s*$', line):
         #expand strings like '1-3' to '1 2 3' to further get all the indexes to delete
         _tmp = re.sub('\d+[\s]*-[\s]*\d+', expand_indexes_from_range, line[len(operator):])
         return [int(x.group()) for x in re.finditer('\d+', _tmp)] #get all indexes
@@ -232,12 +446,20 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
         _ps = paint('lightblue', PROMPT_SIGN)
     while True: #loop until we have an acceptable answer
         if ball: # when a ball is given, show the item list in the ball.
-            _prompt = make_msg_bar(title)
-            _prompt += '\n'.join(ball.get_indexed_list(highlight = hl)) + '\n' +\
-                       (postfix + '\n' if postfix else '') + prompt
+            # we are drawing everything ourselves, so hide the system
+            # cursor (we will draw a 'fake' one)
+            os.system('setterm -cursor off')
+            ball.paint_indexed_list(make_msg_bar(title),
+                                    hl,
+                                    postfix,
+                                    prompt + _ps)
+            _ans = ball.get_selection(_ps)
+            #_ans = raw_input(prompt + _ps).strip()
+            os.system('setterm -cursor on')
         else:
-            _prompt = prompt
-        _ans = raw_input(_prompt + _ps).strip()
+            _ans = raw_input(prompt + _ps).strip()
+        #pdb.set_trace()
+        #_ans = raw_input(_prompt + _ps).strip()
         if '/h' == _ans:
             print(help)
         elif '/e' == _ans:
@@ -1434,6 +1656,7 @@ if COLOR:
     color['lightblue'] = '\033[36m'
     color['white'] = '\033[37m'
     color['gray'] = '\033[30m'
+    color['reverse'] = '\033[07m'
     _end_ = '\033[00m'
 else:
     color['red'] = ''
@@ -1444,6 +1667,7 @@ else:
     color['lightblue'] = ''
     color['white'] = ''
     color['gray'] = ''
+    color['reverse'] = ''
     _end_ = ''
 
 
