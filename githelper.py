@@ -212,7 +212,10 @@ class Ball(object):
         _selection = get_indexes(operator = _operator[0], line = string)
         if _selection: # user has selected some items, highlight them
             for x in _selection:
-                _buff[x] =_buff[x].replace('\t', '\t' + color['reverse']) + _end_
+                try:
+                   _buff[x] =_buff[x].replace('\t', '\t' + color['reverse']) + _end_
+                except LookupError:
+                   pass # some of the selection is invalid, just ignore
         #print the display list again from the current cursor position
         print('\n'.join(_buff))
         sys.stdout.write(self.term.CLEAR_EOL)
@@ -223,9 +226,12 @@ class Ball(object):
     def delete(self, item_list, func):
         item_list.sort(reverse = True) #remove the very last item in the list first
         for x in item_list:
-            _result, _msg = func(self[x], self.name)
-            if _result is True: #user might choose not to delete
-                self.list.remove(self[x])
+            try:
+                _result, _msg = func(self[x], self.name)
+                if _result is True: #user might choose not to delete
+                    self.list.remove(self[x])
+            except LookupError:
+                _msg  = "item %d doesn't exist" % x
             print(_msg)
 
 class BranchBall(Ball):
