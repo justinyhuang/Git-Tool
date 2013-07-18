@@ -176,10 +176,11 @@ class Ball(object):
         return index_list(self.list, highlight = highlight)
     def paint_indexed_list(self, title, highlight, postfix, prompt):
         self.highlight = highlight
+        self.prompt = prompt
         _buff = index_list(self.list, highlight = highlight)
         print(title + '\n' +\
               '\n'.join(_buff) + '\n' +\
-              (postfix + '\n' if postfix else '') + prompt + '_')
+              (postfix + '\n' if postfix else '') + self.prompt + '_')
         sys.stdout.write(self.term.UP)
     def set_selected_indexed_list(self, highlight, selected_list):
         self.highlight = highlight
@@ -187,24 +188,26 @@ class Ball(object):
         pass
     # for a ball we could do more when user providing the selection
     # including highlighting the selection etc.
-    def get_selection(self, prompt):
+    def get_selection(self):
         _result = ''
         _key = getkey()
-        while _key != '\n':
+        while _key != '\n': #quit when enter is pressed
             if ord(_key) == 127: # that is a backspace
                 _result = _result[:-1]
             else:
                 _result += _key
-            self.highlight_selection(_result, prompt)
+            self.highlight_selection(_result)
             _key = getkey()
         return _result
-    def highlight_selection(self, string, prompt):
+    def highlight_selection(self, string):
         sys.stdout.write(self.term.CLEAR_BOL)
         #we need to display the customer's input as well
-        print(prompt + string + '_')
+        print(self.prompt + string + '_')
         _operator = re.findall('^[\s\D]*', string) #it always returns something
         #get the height of the list
         _height = self.get_height() * len(self.list) + 1
+        if _height == 1:
+            _height = 2 # for situation when nothing is listed
         #move the cursor to the top of the list
         sys.stdout.write(self.term.UP * _height)
         #re-render the display list (might just make it a tmp buff)
@@ -393,6 +396,22 @@ def allperm(inputstr):
 def split(str, sep = None):
     return str.split(sep) if str else []
 
+def hide_cursor():
+    if sys.platform == 'darwin':
+        os.system('echo "\033[?25l"')
+    elif sys.platform == 'linux':
+        os.system('setterm -cursor off')
+    elif sys.platform == 'Windows':
+        pass #i don't know how to do this in Windows
+
+def show_cursor():
+    if sys.platform == 'darwin':
+        os.system('echo "\033[?25h"')
+    elif sys.platform == 'linux':
+        os.system('setterm -cursor on')
+    elif sys.platform == 'Windows':
+        pass #i don't know how to do this in Windows
+
 def get_stdout(pipe):
     while(True):
         retcode = pipe.poll() #returns None while subprocess is running
@@ -460,14 +479,13 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
         if ball: # when a ball is given, show the item list in the ball.
             # we are drawing everything ourselves, so hide the system
             # cursor (we will draw a 'fake' one)
-            #os.system('setterm -cursor off')
+            hide_cursor()
             ball.paint_indexed_list(make_msg_bar(title),
                                     hl,
                                     postfix,
                                     prompt + _ps)
-            _ans = ball.get_selection(_ps)
-            #_ans = raw_input(prompt + _ps).strip()
-            #os.system('setterm -cursor on')
+            _ans = ball.get_selection()
+            show_cursor()
         else:
             _ans = raw_input(prompt + _ps).strip()
         #pdb.set_trace()
@@ -658,12 +676,10 @@ def select_branch(isremote = False):
 
 def make_branch(branch):
     _parent_branch = get_current_branch()
-    _parent_remote = get_remote(_parent_branch)
     _tmp = invoke(git.branch(branch = branch)) #create branch with the name given
     _tmp = do_checkout_branch(target = branch)
     _result = 'created and switched to new branch: ' + paint('red', branch) + '\n'
-    _result += invoke(git.branch(branch = branch,
-                                 upstream = _parent_remote + '/' + _parent_branch))
+    copy_branch_config(branch, _parent_branch)
     return _result
 
 #based on the remote and fetch values of the parent, set up the values for the new branch
@@ -1274,6 +1290,7 @@ def do_checkout_from_commit(ref):
         _new_branch = get_answer(prompt = "Give a name to the new branch")
     _parent_branch = get_current_branch()
     _parent_remote = get_remote(_parent_branch)
+    pdb.set_trace()
     ref = ref.strip(' \n\t')
     _tmp =  invoke(git.checkout(target = ref, new_branch = _new_branch))
     if 'fatal: git checkout:' in _tmp: #something wrong occur when checking out
