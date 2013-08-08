@@ -155,10 +155,10 @@ class Ball(object):
     the carrier is able to perform certain operations on the data it holds.
     """
     def __init__(self, _list, name = 'item'):
-        _terminal_width = get_terminal_size()[0]
+        _term_height, _term_width = os.popen('stty size', 'r').read().split()
         #cut off the over-length data so that we could show the data
         #better in the terminal
-        self.list = [x[:_terminal_width] for x in _list]
+        self.list = [x[:int(_term_width)] for x in _list]
         self.name = name
         self.highlight = 0
         self.selected_list = []
@@ -391,35 +391,6 @@ def paint(text_color, str):
     return color[text_color] + str + _end_
 
 #-------------------basic and misc helppers
-#borrowed from stackoverflow.com/questions/566746/how-to-get-console-window-width-in-python
-def get_terminal_size():
-    import os
-    env = os.environ
-    def ioctl_GWINSZ(fd):
-        try:
-            import fcntl, termios, struct, os
-            cr = struct.unpack('hh', fcntl.ioctl(fd, termios.TIOCGWINSZ,
-        '1234'))
-        except:
-            return
-        return cr
-    cr = ioctl_GWINSZ(0) or ioctl_GWINSZ(1) or ioctl_GWINSZ(2)
-    if not cr:
-        try:
-            fd = os.open(os.ctermid(), os.O_RDONLY)
-            cr = ioctl_GWINSZ(fd)
-            os.close(fd)
-        except:
-            pass
-    if not cr:
-        cr = (env.get('LINES', 25), env.get('COLUMNS', 80))
-
-        ### Use get(key[, default]) instead of a try/catch
-        #try:
-        #    cr = (env['LINES'], env['COLUMNS'])
-        #except:
-        #    cr = (25, 80)
-    return int(cr[1]), int(cr[0])
 #the services provided by the git tool box, used for creating the links
 ## {{{ http://code.activestate.com/recipes/577842/ (r1)
 def allperm(inputstr):
