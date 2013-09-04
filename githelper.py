@@ -679,10 +679,10 @@ def select_branch(isremote = False):
         _ans = [_ans]
     return _branch_list, _ans
 
-def make_branch(branch):
+def make_branch(branch, track_info = None):
     _parent_branch = get_current_branch()
-    _tmp = invoke(git.branch(branch = branch)) #create branch with the name given
-    _tmp = do_checkout_branch(target = branch)
+    _tmp = invoke(git.branch(branch = branch, upstream = track_info)) #create branch with the name given
+    _tmp = do_checkout_branch(target = branch) #to switch to the new branch
     _result = 'created and switched to new branch: ' + paint('red', branch) + '\n'
     copy_branch_config(branch, _parent_branch)
     return _result
@@ -1282,7 +1282,12 @@ def do_checkout_branch(target, in_list = True, isremote = False, new_branch = ""
         else:
             set_local("core.CurrentBranch", value = target)
     else: #selected branch is not in the list
-        _tmp = make_branch(target)
+        #get the track info if there is any and clone it to the new branch
+        try:
+            _track_info = get_local("%s.TrackInfo" % get_current_branch())
+        except ConfigItemMissing:
+            _track_info = None
+        _tmp = make_branch(target, track_info = _track_info)
     return _tmp
 
 def do_checkout_file_from_commit(files, hash):
@@ -1296,11 +1301,15 @@ def do_checkout_from_commit(ref):
     _parent_branch = get_current_branch()
     _parent_remote = get_remote(_parent_branch)
     ref = ref.strip(' \n\t')
+    try:
+        _track_info = get_local("branch.%s.TrackInfo" % get_current_branch())
+    except ConfigItemMissing:
+        _track_info = None
     _tmp =  invoke(git.checkout(target = ref, new_branch = _new_branch))
     if 'fatal: git checkout:' in _tmp: #something wrong occur when checking out
         exit_with_error(_tmp)
-    _tmp += invoke(git.branch(branch = _new_branch,
-                              upstream = _parent_remote + '/' + _parent_branch))
+    _tmp += invoke(git.branch(branch = _new_branch, upstream = _track_info))
+    set_local("branch.%s.TrackInfo" % _new_branch, value = _track_info)
     return _tmp
 
 def do_patch(hash_str, patch_file):
@@ -1347,6 +1356,7 @@ def do_fetch(url = None, ref = None):
         print("updating ...")
         _result = invoke(git.fetch(url))
     else: #to fetch a remote branch to local repo
+        """
         _bname = ref[ ref.rfind('/') + 1: ] #get the branch name
         _local_ref = ref.replace('refs/', 'refs/remotes/', 1)
         _cur_branch = get_current_branch()
@@ -1360,6 +1370,16 @@ def do_fetch(url = None, ref = None):
         _local_ref = 'refs/remotes/' + ref[5:] #path to the local ref copy
         _result += do_checkout_branch(target = _local_ref, new_branch = _bname)
         link_branch_to_ref(_bname, _cur_branch, ref, _local_ref)
+        """
+        _bname = ref[ ref.rfind('/') + 1: ] #get the branch name
+        _local_track = 'remotes/' + ref[ref.find('/') + 1: ]
+        print("loading remote branch %s ..." % paint('red', ref))
+        _result = invoke(git.fetch(url = 'origin'))
+        #make a branch tracking the ref, forcing the branch name to be the same as the remote
+        _result += invoke(git.checkout(new_branch = _bname, track = _local_track))
+        set_local("core.CurrentBranch", value = _bname)
+        #this is the first branch we check out from a remote branch, remember the track info
+        set_local("branch.%s.TrackInfo" % _bname, value = _local_track)
     return _result
 
 def do_clone():
