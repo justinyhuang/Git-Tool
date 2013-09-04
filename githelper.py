@@ -990,9 +990,9 @@ def remove_local(section):
 
 #-------------------functional blocks
 
-months = ['Dec', 'Nov', 'Oct', 'Sept', 'Aug', 'Jul',
+months = ['Dec', 'Nov', 'Oct', 'Sep', 'Aug', 'Jul',
           'Jun', 'May', 'Apr', 'Mar', 'Feb', 'Jan',
-          'Dec', 'Nov', 'Oct', 'Sept', 'Aug']
+          'Dec', 'Nov', 'Oct', 'Sep', 'Aug']
 days = ['Sun', 'Sat', 'Fri', 'Thu', 'Wed', 'Tue', 'Mon',
         'Sun', 'Sat', 'Fri', 'Thu', 'Wed', 'Tue']
 def get_activity_distribution(author, time = 'monthly'):
