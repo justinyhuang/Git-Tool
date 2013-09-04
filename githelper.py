@@ -1677,7 +1677,7 @@ def revert_file_item(item, unused):
         invoke(git.checkout(target = _file)) # clean ' M' eventually
         _remove_from_list = True
     elif item.strip().startswith('??'): #the file is out of hash control
-        invoke('rm ' + _file)
+        invoke('rm -fr' + _file) #so that we could also remove directories
         _remove_from_list = True
     elif item.strip().startswith('*'): #the file status is unknown other than 'changed'
         exit_with_error("don't know how to revert %s" % _file)
