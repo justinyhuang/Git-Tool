@@ -3,6 +3,7 @@ import subprocess, pdb, os, sys, re, math, time, operator, termios
 
 # borrowed from
 # http://code.activestate.com/recipes/475116-using-terminfo-for-portable-color-output-cursor-co/
+# and added the capability of holding/showing/updating a text buffer
 class TerminalController:
     """
     A class that can be used to portably generate formatted output to
@@ -126,6 +127,141 @@ class TerminalController:
         if set_bg_ansi:
             for i,color in zip(range(len(self._ANSICOLORS)), self._ANSICOLORS):
                 setattr(self, 'BG_'+color, curses.tparm(set_bg_ansi, i) or '')
+        self.text_buffer = ''
+        self.title = ''
+        self.buffer_size = 0
+        self.buffer_begin = 0
+        self.buffer_end = 0
+        self.line_ptr = 0
+        # win1 is the title window
+        # win2 is the window of which the content could be updated
+        # win3 is the window for input from the user
+        self.win1_height = 1
+        self.win2_height = 1
+        self.win3_height = 1
+
+    def set_buffer(self, buff):
+        self.text_buffer = buff
+        self.buffer_size = len(buff)
+
+    def set_window2(self, width, height1, height2, height3):
+        self.win_width = width
+        self.win1_height = height1
+        self.win2_height = height2
+        self.win3_height = height3
+        self.buffer_begin = 0
+        self.buffer_end = self.win2_height
+
+    def set_title(self, title):
+        self.title = title
+        self.win1_height = title.count('\n') + 1
+
+    def term_print(self, str):
+        print(str)
+        self.line_ptr += str.count('\n') + 1
+
+    def move_to_top_of_win3(self):
+        sys.stdout.write(self.UP * self.line_ptr)
+        self.line_ptr = self.win1_height + self.win2_height
+        sys.stdout.write(self.DOWN * self.line_ptr)
+
+    def move_to_top_of_win2(self):
+        sys.stdout.write(self.UP * self.line_ptr)
+        self.line_ptr = self.win1_height
+        sys.stdout.write(self.DOWN * self.line_ptr)
+
+    def move_to_top_of_win1(self):
+        sys.stdout.write(self.UP * self.line_ptr)
+        self.line_ptr = 0
+
+    def clear_win3(self):
+        self.move_to_top_of_win3()
+        self.term_print((' ' * self.win_width + '\n') * self.win3_height)
+
+    def clear_win2(self):
+        self.move_to_top_of_win2()
+        self.term_print((' ' * self.win_width + '\n') * self.win2_height)
+
+    def clear_win1(self):
+        self.move_to_top_of_win1()
+        self.term_print((' ' * self.win_width + '\n') * self.win1_height)
+
+    def update_win1(self, str):
+        #first reset the window
+        self.clear_win1()
+        self.move_to_top_of_win1()
+        #then print the new content
+        self.term_print(str)
+
+    def update_win2(self, str):
+        #first reset the window
+        self.clear_win2()
+        self.move_to_top_of_win2()
+        #then print the new content
+        self.term_print(str)
+
+    def update_win3(self, str):
+        #first reset the window
+        self.clear_win3()
+        self.move_to_top_of_win3()
+        #then print the new content
+        self.term_print(str)
+
+    def show_input_prompt(self, postfix, prompt):
+        self.move_to_top_of_win3()
+        self.update_win3((postfix + '\n' if postfix else '') + prompt + '_')
+
+    def move_win2_down(self):
+        self.buffer_begin = self.buffer_end
+        self.buffer_end = self.buffer_end + self.win2_height\
+                          if self.buffer_end + self.win2_height < self.buffer_size\
+                          else self.buffer_size
+
+    def move_win2_up(self):
+        self.buffer_begin = self.buffer_begin - self.win2_height\
+                            if self.buffer_begin > self.win2_height\
+                            else 0
+        self.buffer_end = self.buffer_begin + self.win2_height
+
+    def show_buffer(self, browse_mode = True, highlight = None):
+        self.update_win1(self.title)
+        _buffer = self.text_buffer[:] # to copy the list
+        if highlight:
+            # we are asked to show the highlighted portion of the buffer
+            for i in highlight:
+                try:
+                    _buffer[i] = self.text_buffer[i].replace('\t', '\t' + color['reverse']) + _end_
+                except LookupError:
+                   pass # some of the selection is invalid, just ignore
+            _last_hl_idx = highlight[-1] + 1
+            # if the highlighted item is outside of this window, we
+            # will update the window to show the item
+            while _last_hl_idx < self.buffer_begin:
+                self.move_win2_up()
+            while _last_hl_idx > self.buffer_end:
+                self.move_win2_down()
+
+        if self.win2_height >= self.buffer_size:
+            # we can show the entire text buffer
+            self.win2_height = self.buffer_size
+            self.buffer_end = self.buffer_size
+            self.update_win2('\n'.join(_buffer[self.buffer_begin:self.buffer_end]))
+        else:
+            quit_keys = ['TwiceEsc', 'q', 'Q']
+            page_down_keys = ['PgDn', ' ', 'Down', 'Enter']
+            page_up_keys = ['PgUp', 'Up']
+            self.update_win2('\n'.join(_buffer[self.buffer_begin:self.buffer_end]))
+            if browse_mode == False:
+                return # escape when we are told only to show the buffer and quit
+            _key = capture_keypress()
+            while (_key not in quit_keys and
+                   not (_key == ' ' and self.buffer_end == self.buffer_size)) :
+                if _key in page_down_keys:
+                    self.move_win2_down()
+                elif _key in page_up_keys:
+                    self.move_win2_up()
+                self.update_win2('\n'.join(_buffer[self.buffer_begin:self.buffer_end]))
+                _key = capture_keypress()
 
     def _tigetstr(self, cap_name):
         # String capabilities can include "delays" of the form "$<2>".
@@ -155,10 +291,12 @@ class Ball(object):
     the carrier is able to perform certain operations on the data it holds.
     """
     def __init__(self, _list, name = 'item'):
-        _term_height, _term_width = os.popen('stty size', 'r').read().split()
+        _height, _width = os.popen('stty size', 'r').read().split()
+        self.term_height = int(_height)
+        self.term_width = int(_width)
         #cut off the over-length data so that we could show the data
         #better in the terminal
-        self.list = [x[:int(_term_width)] for x in _list]
+        self.list = [x[:self.term_width] for x in _list]
         self.name = name
         self.highlight = 0
         self.selected_list = []
@@ -179,14 +317,17 @@ class Ball(object):
         self.highlight = highlight
         self.prompt = prompt
         _buff = index_list(self.list, highlight = highlight)
-        print(title + '\n' +\
-              '\n'.join(_buff) + '\n' +\
-              (postfix + '\n' if postfix else '') + self.prompt + '_')
-        sys.stdout.write(self.term.UP)
+        # configure the TerminalController for display
+        self.term.set_buffer(_buff)
+        # limit the buffer window to half of the terminal height,
+        #so that we could still show things like title, help messages etc.
+        self.term.set_window2(self.term_width, 1, self.term_height / 2, 1)
+        self.term.set_title(title)
+        self.term.show_buffer()
+        self.term.show_input_prompt(postfix, self.prompt)
     def set_selected_indexed_list(self, highlight, selected_list):
         self.highlight = highlight
         self.selected_list = selected_list
-        pass
     # for a ball we could do more when user providing the selection
     # including highlighting the selection etc.
     def get_selection(self):
@@ -197,13 +338,20 @@ class Ball(object):
                 _result = _result[:-1]
             else:
                 _result += _key
-            self.highlight_selection(_result)
+            _hl_indexes = self.get_highlight_indexes(_result)
+            self.term.update_win3(self.prompt + _result + '_')
+            self.term.show_buffer(browse_mode = False, highlight = _hl_indexes)
+            #self.highlight_selection(_result)
             _key = getkey()
         return _result
+    def get_highlight_indexes(self, string):
+        _operator = re.findall('^[\s\D]*', string) #it always returns something
+        #return the highlighted indexes
+        return get_indexes(operator = _operator[0], line = string)
     def highlight_selection(self, string):
         sys.stdout.write(self.term.CLEAR_BOL)
         #we need to display the customer's input as well
-        print(self.prompt + string + '_')
+        #----print(self.prompt + string + '_')
         _operator = re.findall('^[\s\D]*', string) #it always returns something
         #get the height of the list
         _height = self.get_height() * len(self.list) + 1
@@ -221,7 +369,7 @@ class Ball(object):
                 except LookupError:
                    pass # some of the selection is invalid, just ignore
         #print the display list again from the current cursor position
-        print('\n'.join(_buff))
+        #----print('\n'.join(_buff))
         sys.stdout.write(self.term.CLEAR_EOL)
         #sys.stdout.write(self.term.BOL + self.term.UP + self.term.CLEAR_EOL + string + self.term.CLEAR_EOL)
 
@@ -391,6 +539,52 @@ def paint(text_color, str):
     return color[text_color] + str + _end_
 
 #-------------------basic and misc helppers
+# to capture a keypress, in Linux
+def capture_keypress():
+    a = [0, 0, 0, 0, 0, 0]
+    try:
+        os.system('stty -icanon')
+        os.system('stty -echo')
+        a[0]=ord(sys.stdin.read(1))
+        if a[0]==27:
+            a[1]=ord(sys.stdin.read(1))
+            if a[1]==91:
+                a[2]=ord(sys.stdin.read(1))
+                if (a[2]>=49 and a[2]<=54) or a[2]==91:
+                    a[3]=ord(sys.stdin.read(1))
+                    if a[3]>=48 and a[3]<=57:
+                        a[4]=ord(sys.stdin.read(1))
+    finally:
+        os.system('stty echo')
+        os.system('stty icanon')
+    if a==[ 10, 0, 0, 0, 0, 0]: k = "Enter"         #13
+    elif a==[ 27, 27, 0, 0, 0, 0]: k = "TwiceEsc"   #27
+    elif a==[ 27, 91, 91, 65, 0, 0]: k = "F1"       #1059
+    elif a==[ 27, 91, 91, 66, 0, 0]: k = "F2"       #1060
+    elif a==[ 27, 91, 91, 67, 0, 0]: k = "F3"       #1061
+    elif a==[ 27, 91, 91, 68, 0, 0]: k = "F4"       #1062
+    elif a==[ 27, 91, 91, 69, 0, 0]: k = "F5"       #1063
+    elif a==[ 27, 91, 49, 55, 126, 0]: k = "F6"     #1064
+    elif a==[ 27, 91, 49, 56, 126, 0]: k = "F7"     #1065
+    elif a==[ 27, 91, 49, 57, 126, 0]: k = "F8"     #1066
+    elif a==[ 27, 91, 50, 48, 126, 0]: k = "F9"     #1067
+    elif a==[ 27, 91, 50, 49, 126, 0]: k = "F10"    #1068
+    elif a==[ 27, 91, 50, 51, 126, 0]: k = "F11"    #1133
+    elif a==[ 27, 91, 50, 52, 126, 0]: k = "F12"    #1134
+    elif a==[ 27, 91, 50, 126, 0, 0]: k = "Insert"  #1082
+    elif a==[ 27, 91, 51, 126, 0, 0]: k = "Delete"  #1083
+    elif a==[ 27, 91, 49, 126, 0, 0]: k = "Home"    #1071
+    elif a==[ 27, 91, 52, 126, 0, 0]: k = "End"     #1079
+    elif a==[ 27, 91, 53, 126, 0, 0]: k = "PgUp"    #1073
+    elif a==[ 27, 91, 54, 126, 0, 0]: k = "PgDn"    #1081
+    elif a==[ 27, 91, 65, 0, 0, 0]: k = "Up"        #1072
+    elif a==[ 27, 91, 66, 0, 0, 0]: k = "Down"      #1080
+    elif a==[ 27, 91, 68, 0, 0, 0]: k = "Left"      #1075
+    elif a==[ 27, 91, 67, 0, 0, 0]: k = "Right"     #1077
+    elif a==[127, 0, 0, 0, 0, 0]: k = "Backspace"   #8
+    else: k = chr(a[0])                             # Ascii code
+    return k
+
 #the services provided by the git tool box, used for creating the links
 ## {{{ http://code.activestate.com/recipes/577842/ (r1)
 def allperm(inputstr):
@@ -1677,7 +1871,7 @@ def revert_file_item(item, unused):
         invoke(git.checkout(target = _file)) # clean ' M' eventually
         _remove_from_list = True
     elif item.strip().startswith('??'): #the file is out of hash control
-        invoke('rm -fr' + _file) #so that we could also remove directories
+        invoke('rm -fr ' + _file) #so that we could also remove directories
         _remove_from_list = True
     elif item.strip().startswith('*'): #the file status is unknown other than 'changed'
         exit_with_error("don't know how to revert %s" % _file)
