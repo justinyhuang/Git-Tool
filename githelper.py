@@ -1,6 +1,42 @@
 import gitcommand as git
 import subprocess, pdb, os, sys, re, math, time, operator, termios
 
+class TextWindowManager(object):
+    def __init__(self, up, down):
+        self.windows = [] # keeps all the windows
+        self.current_ptr = 0 # keeps track of the current line of the text cursor
+        self.UP = up
+        self.DOWN = down
+    def create_window(self, width, height):
+        self.windows.append([width, height])
+        return len(self.windows) # this would be the id for the new window
+    def term_print(self, str):
+        print(str)
+        self.current_ptr += str.count('\n') + 1
+    def move_to_top(self, win_id):
+        sys.stdout.write(self.UP * self.current_ptr) # move to the top of everything
+        self.current_ptr = 0
+        for w, h in self.windows[:win_id]: # move towards the top of the window
+            self.current_ptr += h
+            sys.stdout.write(self.DOWN * h)
+    def clear_window(self, win_id):
+        self.move_to_top(win_id)
+        window = self.windows[win_id]
+        self.term_print((' ' * window[0] + '\n') * window[1])
+    def update_window(self, win_id, str):
+        self.clear_window(win_id)
+        self.move_to_top(win_id)
+        self.term_print(str)
+    def set_win_height(self, win_id, height):
+        self.windows[win_id][1] = height
+    def set_win_width(self, win_id, width):
+        self.windows[win_id][0] = width
+    def get_win_height(self, win_id):
+        return self.windows[win_id][1]
+    def get_win_width(self, win_id):
+        return self.windows[win_id][0]
+
+
 # borrowed from
 # http://code.activestate.com/recipes/475116-using-terminfo-for-portable-color-output-cursor-co/
 # and added the capability of holding/showing/updating a text buffer
@@ -132,99 +168,41 @@ class TerminalController:
         self.buffer_size = 0
         self.buffer_begin = 0
         self.buffer_end = 0
-        self.line_ptr = 0
-        # win1 is the title window
-        # win2 is the window of which the content could be updated
-        # win3 is the window for input from the user
-        self.win1_height = 1
-        self.win2_height = 1
-        self.win3_height = 1
-
+        self.win_mgr = TextWindowManager(self.UP, self.DOWN)
     def set_buffer(self, buff):
         self.text_buffer = buff
         self.buffer_size = len(buff)
-
-    def set_window2(self, width, height1, height2, height3):
-        self.win_width = width
-        self.win1_height = height1
-        self.win2_height = height2
-        self.win3_height = height3
+    def set_windows(self, width1, height1, width2, height2, width3, height3):
         self.buffer_begin = 0
-        self.buffer_end = self.win2_height
-
+        self.buffer_end = height2
+        # win0 is the title window
+        self.win_mgr.create_window(width1, height1)
+        # win1 is the window of which the content could be updated
+        self.win_mgr.create_window(width2, height2)
+        # win2 is the window for input from the user
+        self.win_mgr.create_window(width3, height3)
     def set_title(self, title):
         self.title = title
-        self.win1_height = title.count('\n') + 1
-
-    def term_print(self, str):
-        print(str)
-        self.line_ptr += str.count('\n') + 1
-
-    def move_to_top_of_win3(self):
-        sys.stdout.write(self.UP * self.line_ptr)
-        self.line_ptr = self.win1_height + self.win2_height
-        sys.stdout.write(self.DOWN * self.line_ptr)
-
-    def move_to_top_of_win2(self):
-        sys.stdout.write(self.UP * self.line_ptr)
-        self.line_ptr = self.win1_height
-        sys.stdout.write(self.DOWN * self.line_ptr)
-
-    def move_to_top_of_win1(self):
-        sys.stdout.write(self.UP * self.line_ptr)
-        self.line_ptr = 0
-
-    def clear_win3(self):
-        self.move_to_top_of_win3()
-        self.term_print((' ' * self.win_width + '\n') * self.win3_height)
-
-    def clear_win2(self):
-        self.move_to_top_of_win2()
-        self.term_print((' ' * self.win_width + '\n') * self.win2_height)
-
-    def clear_win1(self):
-        self.move_to_top_of_win1()
-        self.term_print((' ' * self.win_width + '\n') * self.win1_height)
-
-    def update_win1(self, str):
-        #first reset the window
-        self.clear_win1()
-        self.move_to_top_of_win1()
-        #then print the new content
-        self.term_print(str)
-
-    def update_win2(self, str):
-        #first reset the window
-        self.clear_win2()
-        self.move_to_top_of_win2()
-        #then print the new content
-        self.term_print(str)
-
-    def update_win3(self, str):
-        #first reset the window
-        self.clear_win3()
-        self.move_to_top_of_win3()
-        #then print the new content
-        self.term_print(str)
-
+        self.win_mgr.set_win_height(0, title.count('\n') + 1)
     def show_input_prompt(self, postfix, prompt):
-        self.move_to_top_of_win3()
-        self.update_win3((postfix + '\n' if postfix else '') + prompt + '_')
-
-    def move_win2_down(self):
+        self.win_mgr.move_to_top(2)
+        self.win_mgr.update_window(2, (postfix + '\n' if postfix else '') + prompt + '_')
+    def backward_buffer(self):
         self.buffer_begin = self.buffer_end
-        self.buffer_end = self.buffer_end + self.win2_height\
-                          if self.buffer_end + self.win2_height < self.buffer_size\
+        win_height = self.win_mgr.get_win_height(1)
+        self.buffer_end = self.buffer_end + win_height\
+                          if self.buffer_end + win_height < self.buffer_size\
                           else self.buffer_size
 
-    def move_win2_up(self):
-        self.buffer_begin = self.buffer_begin - self.win2_height\
-                            if self.buffer_begin > self.win2_height\
+    def forward_buffer(self):
+        win_height = self.win_mgr.get_win_height(1)
+        self.buffer_begin = self.buffer_begin - win_height\
+                            if self.buffer_begin > win_height\
                             else 0
-        self.buffer_end = self.buffer_begin + self.win2_height
+        self.buffer_end = self.buffer_begin + win_height
 
     def show_buffer(self, browse_mode = True, highlight = None):
-        self.update_win1(self.title)
+        self.win_mgr.update_window(0, self.title)
         _buffer = self.text_buffer[:] # to copy the list
         if highlight:
             # we are asked to show the highlighted portion of the buffer
@@ -237,30 +215,30 @@ class TerminalController:
             # if the highlighted item is outside of this window, we
             # will update the window to show the item
             while _last_hl_idx < self.buffer_begin:
-                self.move_win2_up()
+                self.forward_buffer()
             while _last_hl_idx > self.buffer_end:
-                self.move_win2_down()
+                self.backward_buffer()
 
-        if self.win2_height >= self.buffer_size:
+        if self.win_mgr.get_win_height(1) >= self.buffer_size:
             # we can show the entire text buffer
-            self.win2_height = self.buffer_size
+            self.win_mgr.set_win_height(1, self.buffer_size)
             self.buffer_end = self.buffer_size
-            self.update_win2('\n'.join(_buffer[self.buffer_begin:self.buffer_end]))
+            self.win_mgr.update_window(1, '\n'.join(_buffer[self.buffer_begin:self.buffer_end]))
         else:
             quit_keys = ['TwiceEsc', 'q', 'Q']
-            page_down_keys = ['PgDn', ' ', 'Down', 'Enter']
-            page_up_keys = ['PgUp', 'Up']
-            self.update_win2('\n'.join(_buffer[self.buffer_begin:self.buffer_end]))
+            page_down_keys = ['PgDn', 'j', 'J', ' ', 'Down', 'Enter']
+            page_up_keys = ['PgUp', 'Up', 'k', 'K']
+            self.win_mgr.update_window(1, '\n'.join(_buffer[self.buffer_begin:self.buffer_end]))
             if browse_mode == False:
                 return # escape when we are told only to show the buffer and quit
             _key = capture_keypress()
             while (_key not in quit_keys and
                    not (_key == ' ' and self.buffer_end == self.buffer_size)) :
                 if _key in page_down_keys:
-                    self.move_win2_down()
+                    self.backward_buffer()
                 elif _key in page_up_keys:
-                    self.move_win2_up()
-                self.update_win2('\n'.join(_buffer[self.buffer_begin:self.buffer_end]))
+                    self.forward_buffer()
+                self.win_mgr.update_window(1, '\n'.join(_buffer[self.buffer_begin:self.buffer_end]))
                 _key = capture_keypress()
 
     def _tigetstr(self, cap_name):
@@ -321,7 +299,9 @@ class Ball(object):
         self.term.set_buffer(_buff)
         # limit the buffer window to half of the terminal height,
         #so that we could still show things like title, help messages etc.
-        self.term.set_window2(self.term_width, 1, self.term_height / 2, 1)
+        self.term.set_windows(self.term_width, 1,
+                              self.term_width, self.term_height / 2,
+                              self.term_width, 1)
         self.term.set_title(title)
         self.term.show_buffer()
         self.term.show_input_prompt(postfix, self.prompt)
@@ -339,40 +319,14 @@ class Ball(object):
             else:
                 _result += _key
             _hl_indexes = self.get_highlight_indexes(_result)
-            self.term.update_win3(self.prompt + _result + '_')
+            self.term.win_mgr.update_window(2, self.prompt + _result + '_')
             self.term.show_buffer(browse_mode = False, highlight = _hl_indexes)
-            #self.highlight_selection(_result)
             _key = getkey()
         return _result
     def get_highlight_indexes(self, string):
         _operator = re.findall('^[\s\D]*', string) #it always returns something
         #return the highlighted indexes
         return get_indexes(operator = _operator[0], line = string)
-    def highlight_selection(self, string):
-        sys.stdout.write(self.term.CLEAR_BOL)
-        #we need to display the customer's input as well
-        #----print(self.prompt + string + '_')
-        _operator = re.findall('^[\s\D]*', string) #it always returns something
-        #get the height of the list
-        _height = self.get_height() * len(self.list) + 1
-        if _height == 1:
-            _height = 2 # for situation when nothing is listed
-        #move the cursor to the top of the list
-        sys.stdout.write(self.term.UP * _height)
-        #re-render the display list (might just make it a tmp buff)
-        _buff = index_list(self.list, highlight = self.highlight)
-        _selection = get_indexes(operator = _operator[0], line = string)
-        if _selection: # user has selected some items, highlight them
-            for x in _selection:
-                try:
-                   _buff[x] =_buff[x].replace('\t', '\t' + color['reverse']) + _end_
-                except LookupError:
-                   pass # some of the selection is invalid, just ignore
-        #print the display list again from the current cursor position
-        #----print('\n'.join(_buff))
-        sys.stdout.write(self.term.CLEAR_EOL)
-        #sys.stdout.write(self.term.BOL + self.term.UP + self.term.CLEAR_EOL + string + self.term.CLEAR_EOL)
-
     def add(self, item_list, func): #children will take care of the implementation
         pass
     def delete(self, item_list, func):
