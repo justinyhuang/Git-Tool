@@ -14,6 +14,9 @@ Available services:
 Dependencies (please install):
    git: Git-Tool is a wrapper of git
    graphviz: Git-Tool needs this tool to show graphical hash tree via glsg
+
+Also:
+   try <command> --help to get detailed help message for the command
 """
 import os, re, sys, subprocess
 from optparse import OptionParser
@@ -665,7 +668,7 @@ if __name__ == '__main__':
             except Exception:
                 print(__doc__)
         else:
-            if len(sys.argv) == 2 and sys.argv[1] == '?':
+            if len(sys.argv) == 2 and sys.argv[1] == '--help':
                 print(CALL_TABLE[service[:3]].__doc__)
                 exit()
             try:
@@ -682,7 +685,7 @@ if __name__ == '__main__':
                 except Exception:
                     print(__doc__)
             else:
-                if len(sys.argv) == 2 and sys.argv[1] == '?':
+                if len(sys.argv) == 2 and sys.argv[1] == '--help':
                     print(CALL_TABLE[service[:3]].__doc__)
                     exit()
                 try:
