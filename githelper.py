@@ -117,7 +117,7 @@ class TerminalController:
     _COLORS = """BLACK BLUE GREEN CYAN RED MAGENTA YELLOW WHITE""".split()
     _ANSICOLORS = "BLACK RED GREEN YELLOW BLUE MAGENTA CYAN WHITE".split()
 
-    def __init__(self, term_stream=sys.stdout):
+    def __init__(self, item_height = 1, term_stream=sys.stdout):
         """
         Create a `TerminalController` and initialize its attributes
         with appropriate values for the current terminal.
@@ -171,7 +171,7 @@ class TerminalController:
         self.win_mgr = TextWindowManager(self.UP, self.DOWN)
     def set_buffer(self, buff):
         self.text_buffer = buff
-        self.buffer_size = len(buff)
+        self.buffer_size = '\n'.join(buff).count('\n') + 1# line # of the buffer
     def set_windows(self, width1, height1, width2, height2, width3, height3):
         self.buffer_begin = 0
         self.buffer_end = height2
@@ -279,7 +279,7 @@ class Ball(object):
         self.highlight = 0
         self.selected_list = []
         self.display_list = []
-        self.term = TerminalController() # for better control of the terminal output
+        self.term = TerminalController(item_height = self.get_height()) # for better control of the terminal output
         self.help = "You can: \
           \n   Type the index of the %s or,\
           \n   Type the name for a %s or,\
@@ -300,7 +300,7 @@ class Ball(object):
         # limit the buffer window to half of the terminal height,
         #so that we could still show things like title, help messages etc.
         self.term.set_windows(self.term_width, 1,
-                              self.term_width, self.term_height / 2,
+                              self.term_width, self.term_height / 2 * self.get_height(),
                               self.term_width, 1)
         self.term.set_title(title)
         self.term.show_buffer()
@@ -567,14 +567,6 @@ def show_cursor():
     elif sys.platform == 'Windows':
         pass #i don't know how to do this in Windows
 
-def get_stdout(pipe):
-    while(True):
-        retcode = pipe.poll() #returns None while subprocess is running
-        line = pipe.stdout.readline()
-        yield line
-        if(retcode is not None):
-            break
-
 # to get a pressed key without the 'enter'
 def getkey():
     TERMIOS = termios
@@ -593,16 +585,21 @@ def getkey():
     return c
 
 #invoke bash commands
-def invoke(cmd, detached = False):
+def invoke(cmd, detached = False, need_error_and_out = False):
     if DEBUG == True: #for debug only
         print('>>> %s <<<' % cmd)
     if detached is False:
-        execution=subprocess.Popen(cmd, shell=True, bufsize = -1,
-                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        result = ""
-        for line in get_stdout(execution):
-            result += line
-        return result
+        execution=subprocess.Popen([cmd],
+                                   shell=True, stdin=subprocess.PIPE,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        o=execution.communicate()
+        if need_error_and_out: #return both stdout and stderr
+            return o[0], o[1]
+        else:
+            if o[1]: #return error if there is any
+                return o[1]
+            if o[0]: #only return the std result, when there is no error
+                return o[0]
     else: #invoke bash commands in separate process, no error return
         subprocess.Popen(cmd.split(), stderr=subprocess.PIPE)
     return ""
