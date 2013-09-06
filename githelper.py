@@ -195,39 +195,39 @@ class TerminalController:
         self.buffer_end = self.buffer_end + win_height\
                           if self.buffer_end + win_height < self.buffer_size\
                           else self.buffer_size
-
     def backward_buffer(self):
         win_height = self.win_mgr.get_win_height(1)
         self.buffer_begin = self.buffer_begin - win_height\
                             if self.buffer_begin > win_height\
                             else 0
         self.buffer_end = self.buffer_begin + win_height
-
-    def show_buffer(self, browse_mode = True, highlight = None):
+    def show_buffer(self, browse_mode = True, highlight = [], jump_to = None):
         self.win_mgr.update_window(0, self.title)
         _buffer = self.text_buffer[:] # to copy the list
-        if highlight:
+        if highlight or jump_to:
             # we are asked to show the highlighted portion of the buffer
-            for i in highlight:
+            for idx in highlight:
                 try:
-                    _buffer[i] = self.text_buffer[i].replace('\t', '\t' + color['reverse']) + _end_
+                    first_line = idx * self.item_height
+                    for l in xrange(self.item_height):
+                        line = first_line + l
+                        _buffer[line] = self.text_buffer[line].replace('\t', '\t' + color['reverse']) + _end_
                 except LookupError:
                    pass # some of the selection is invalid, just ignore
-            _last_hl_idx = highlight[-1] + 1
+            _last_hl_idx = jump_to + 1 if jump_to else highlight[-1] + 1
             # if the highlighted item is outside of this window, we
             # will update the window to show the item
             while _last_hl_idx < self.buffer_begin / self.item_height:
                 self.backward_buffer()
             while _last_hl_idx > self.buffer_end / self.item_height:
                 self.forward_buffer()
-
         if self.win_mgr.get_win_height(1) >= self.buffer_size:
             # we can show the entire text buffer
             self.win_mgr.set_win_height(1, self.buffer_size)
             self.buffer_end = self.buffer_size
             self.win_mgr.update_window(1, '\n'.join(_buffer[self.buffer_begin:self.buffer_end]))
         else:
-            quit_keys = ['TwiceEsc', 'q', 'Q']
+            quit_keys = ['TwiceEsc', 'q', 'Q', '/']
             page_down_keys = ['PgDn', 'j', 'J', ' ', 'Down', 'Enter']
             page_up_keys = ['PgUp', 'Up', 'k', 'K']
             self.win_mgr.update_window(1, '\n'.join(_buffer[self.buffer_begin:self.buffer_end]))
@@ -242,6 +242,10 @@ class TerminalController:
                     self.backward_buffer()
                 self.win_mgr.update_window(1, '\n'.join(_buffer[self.buffer_begin:self.buffer_end]))
                 _key = capture_keypress()
+            if _key == '/':
+                return _key
+            else:
+                return None
 
     def _tigetstr(self, cap_name):
         # String capabilities can include "delays" of the form "$<2>".
@@ -250,7 +254,6 @@ class TerminalController:
         import curses
         cap = curses.tigetstr(cap_name) or ''
         return re.sub(r'\$<\d+>[/*]?', '', cap)
-
     def render(self, template):
         """
         Replace each $-substitutions in the given template string with
@@ -258,7 +261,6 @@ class TerminalController:
         '' (if it's not).
         """
         return re.sub(r'\$\$|\${\w+}', self._render_sub, template)
-
     def _render_sub(self, match):
         s = match.group()
         if s == '$$': return s
@@ -281,7 +283,8 @@ class Ball(object):
         self.highlight = 0
         self.selected_list = []
         self.display_list = []
-        self.term = TerminalController(item_height = self.get_height()) # for better control of the terminal output
+        # for better control of the terminal output
+        self.term = TerminalController(item_height = self.get_height())
         self.help = "You can: \
           \n   Type the index of the %s or,\
           \n   Type the name for a %s or,\
@@ -289,12 +292,7 @@ class Ball(object):
           \n   Use '/e' to quit" % (self.name, self.name, self.name)
     def __getitem__(self, k):
         return self.list[k]
-    def get_list(self):
-        return self.list
-    def get_indexed_list(self, highlight):
-        return index_list(self.list, highlight = highlight)
     def paint_indexed_list(self, title, highlight, postfix, prompt):
-        self.highlight = highlight
         self.prompt = prompt
         _buff = index_list(self.list, highlight = highlight)
         # configure the TerminalController for display
@@ -302,19 +300,24 @@ class Ball(object):
         # limit the buffer window to half of the terminal height,
         #so that we could still show things like title, help messages etc.
         self.term.set_windows(self.term_width, 1,
-                              self.term_width, self.term_height / 2 /self.get_height() * self.get_height(),
+                              self.term_width,
+                              (self.term_height / 2) / self.get_height() * self.get_height(),
                               self.term_width, 1)
         self.term.set_title(title)
-        self.term.show_buffer()
+        # jumps to the idx that is highlighted
+        # not to confused with the whole item that is highlighted
+        _forward_user_input = self.term.show_buffer(jump_to = highlight)
         self.term.show_input_prompt(postfix, self.prompt)
-    def set_selected_indexed_list(self, highlight, selected_list):
-        self.highlight = highlight
-        self.selected_list = selected_list
+        return _forward_user_input
     # for a ball we could do more when user providing the selection
     # including highlighting the selection etc.
-    def get_selection(self):
+    def get_selection(self, pre_input = None):
         _result = ''
-        _key = getkey()
+        if pre_input:
+            _key = pre_input
+            pre_input = None
+        else:
+            _key = getkey()
         while _key != '\n': #quit when enter is pressed
             if ord(_key) == 127: # that is a backspace
                 _result = _result[:-1]
@@ -322,9 +325,12 @@ class Ball(object):
                 _result += _key
             _hl_indexes = self.get_highlight_indexes(_result)
             self.term.win_mgr.update_window(2, self.prompt + _result + '_')
-            self.term.show_buffer(browse_mode = False, highlight = _hl_indexes)
+            self.jump_to_item(_hl_indexes)
             _key = getkey()
         return _result
+    def jump_to_item(self, idx):
+        self.term.show_buffer(browse_mode = False, highlight = idx)
+
     def get_highlight_indexes(self, string):
         _operator = re.findall('^[\s\D]*', string) #it always returns something
         #return the highlighted indexes
@@ -357,9 +363,10 @@ class HashBall(Ball):
     """
     A ball that holds a list of hash
     """
-    def __init__(self, list, infinite = None, name = 'hash'):
+    def __init__(self, list = [], infinite = False, since = -1, name = 'hash'):
         #indicates whether the ball contains unbound hash info
         self.infinite = infinite
+        self.since = since
         super(HashBall, self).__init__(list, name)
     def __getitem__(self, k): #return the hash only
         _firstline = self.list[k].split('\n')[0]
@@ -368,22 +375,7 @@ class HashBall(Ball):
         exit_with_error("Deleting a hash is not allowed")
     def get_height(self):
         return 3
-    """
-    def paint_indexed_list(self, title, highlight, postfix, prompt):
-        self.highlight = highlight
-        self.prompt = prompt
-        _buff = index_list(self.list, highlight = highlight)
-        # configure the TerminalController for display
-        self.term.set_buffer(_buff)
-        # limit the buffer window to half of the terminal height,
-        #so that we could still show things like title, help messages etc.
-        self.term.set_windows(self.term_width, 1,
-                              self.term_width, (self.term_height / 2) / self.get_height() * self.get_height(),
-                              self.term_width, 1)
-        self.term.set_title(title)
-        self.term.show_buffer()
-        self.term.show_input_prompt(postfix, self.prompt)
-    """
+
 class FileBall(Ball):
     """
     A ball that holds a list of branches
@@ -636,7 +628,7 @@ def get_indexes(line, operator = ''):
 #this function returns either a list or a string, the caller should understand well
 #what the return value could be and handle accordingly
 def get_answer(title = '', prompt = '', postfix = '', default = None,
-               help = '', ball = None, hl = -1, loop = True):
+               help = '', ball = None, hl = None, loop = True):
     if (ball and ball.help): # take the help if it is provided by the ball
         help += ball.help
     if not help: #no help is available
@@ -651,11 +643,11 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
             # we are drawing everything ourselves, so hide the system
             # cursor (we will draw a 'fake' one)
             hide_cursor()
-            ball.paint_indexed_list(make_msg_bar(title),
-                                    hl,
-                                    postfix,
-                                    prompt + _ps)
-            _ans = ball.get_selection()
+            _user_input = ball.paint_indexed_list(make_msg_bar(title),
+                                                  hl,
+                                                  postfix,
+                                                  prompt + _ps)
+            _ans = ball.get_selection(_user_input)
             show_cursor()
         else:
             _ans = raw_input(prompt + _ps).strip()
@@ -1643,23 +1635,19 @@ def ordered_hash_string(h1, h2):
         return '%s..%s' % (h1, h2)
 
 #prompt the user a list of hashes and ask for a selected hash
-def select_hash(since = 7, until = 0):
-    _group_size = since
+def select_hash():
+    skip = 0
+    hl = None
+    _range = "--skip=%d" % skip
+    _format='Rev:       %h%n\tDate:     %cd%n\tComment:  %s|'
+    _tmp = do_log(_range, _format)
+    _ball = HashBall(list = _tmp.split('|\n'))
     while True:
-        _range = "-%(num_of_log)d --skip=%(num_to_skip)d" %\
-                {'num_of_log': abs(since - until) + 1,
-                 'num_to_skip': min(since, until) - 1}
-        _format='Rev:       %h%n\tDate:     %cd%n\tComment:  %s|'
-        _tmp = do_log(_range, _format)
-        _ball = HashBall(_tmp.split('|\n')[:-1])
-        _ans = get_answer(title = ' Hash List ', default = '/m', ball = _ball,
+        _ans = get_answer(title = ' Hash List ', default = '/m', ball = _ball, hl = hl,
                           help = '   Enter directly or "/m" for more commits, or\n' +
                                  '   "/m <ID>" for further details of the hash, or\n' +
                                  '   "/f <commit hash>" to go to a specified commit\n')[0]
-        if _ans == '/m': # to show more older commits
-            until = since
-            since += _group_size
-        elif _ans.startswith('/m'): # to show detailed info about a commit
+        if _ans.startswith('/m'): # to show detailed info about a commit
             _index = int(split(_ans)[-1])
             print(invoke(git.log(hash = _ball[_index], num = 1)))
             raw_input('Press Enter to continue...')
@@ -1667,27 +1655,24 @@ def select_hash(since = 7, until = 0):
             if [] != re.findall('^/f\s*[0-9abcdef]{7,}$', _ans):
                 _hash = _ans.split()[1]
                 if if_hash_exist(_hash):
-                    until = get_log_index_by_hash(_hash)
-                    since = until + _group_size
-                    # find the commit by a hash
+                    #skip = get_log_index_by_hash(_hash) - 1
+                    _ans = get_log_index_by_hash(_hash) - 1
+                    hl = _ans
                 else:
                     #print the error and return
                     pass
-
-            _search_hash = _ans[1:]
         else:
             return _ans
-        continue
 
 def select_hash_range(with_current_hash = False, with_previous_hash = False):
     if with_previous_hash is True: #obtain the current and its previous hash
         _current_hash, _base_hash = get_hashes(2)
     else: #get the hashes given by the user
         print("[+] Select a hash")
-        _base_hash = select_hash(since = 10)
+        _base_hash = select_hash()
         if not with_current_hash:#we need two hashes to get the range
             print("[+] Select the other hash")
-            _current_hash = select_hash(since = 4)
+            _current_hash = select_hash()
         else:
             _current_hash = get_hashes(1)[0]
     return ordered_hash_string(_base_hash, _current_hash)
