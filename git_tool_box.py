@@ -26,21 +26,13 @@ import gitcommand as git
 from githelper import *
 
 """
-TODO: when listing hashes, provide the way to search for a hash that is far away in time
 TODO: when browsing hashes, provide the 'prev' command to go back to previous hash list
-TODO: when using 'gsv' in a non-git repo, invoke the 'git create' service
-TODO: when using 'gld', sometimes the git config is not set properly
 TODO: when ask to pick two hashes (gsth, gdih, gsvh), ask the user to pick his "older" hash, and "newer" hash
 TODO: offer more user defined options/settings in the configuration file
-TODO: improve the user experience when doing merge/solving conflicts
-TODO: when gsv to a remote branch, the configuration needs to update to linked to the remote repo
-TODO: when a branch name is origin, we should not name the linked 'remote' section to 'origin'!!
+TODO: improve the user experience when doing merge/solving conflicts, e.g. auto-re-rebase
 TODO: enhance gcf so that user can change the configuration: remote/fetch/url/merge/difftool values easily
-TODO: where to put git blame?
-TODO: we need a solid config file to make sure git-tool is correctly working. fix potential issues.
 TODO: need to consider the situation when the tool is used without a network connection: we will need to skip the checking of remote branches/repo's
 TODO: add the path of git-tool bin directory to PATH and the path of git-tool python files to PYTHONPATH, in gitsetup
-TODO: when there are a long list of remote branches, how would a user pick one easily?
 """
 
 #-------------------SERVICE FUNCTIONS-------------------
@@ -109,7 +101,8 @@ def GITSave(srv = '', param = ''):
     """ gsv
         To 'save' your changes. A 'save' could be:
             * a git init - create a new repository based on local files
-              When invoked in a non-git path, gsv will perform a git init.
+              When invoked in a non-git path, gsv will perform a git init and
+              create a local repository.
 
             * a git commit - save to local repository
               When no parameter is given and there are changed files to commit,

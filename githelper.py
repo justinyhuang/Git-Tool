@@ -169,11 +169,13 @@ class TerminalController:
         self.buffer_begin = 0
         self.buffer_end = 0
         self.win_mgr = TextWindowManager(self.UP, self.DOWN)
+        self.item_height = item_height
     def set_buffer(self, buff):
-        self.text_buffer = buff
+        self.text_buffer = '\n'.join(buff).split('\n')
         self.buffer_size = '\n'.join(buff).count('\n') + 1# line # of the buffer
     def set_windows(self, width1, height1, width2, height2, width3, height3):
         self.buffer_begin = 0
+        self.item_number_in_window = height2 / self.item_height
         self.buffer_end = height2
         # win0 is the title window
         self.win_mgr.create_window(width1, height1)
@@ -187,14 +189,14 @@ class TerminalController:
     def show_input_prompt(self, postfix, prompt):
         self.win_mgr.move_to_top(2)
         self.win_mgr.update_window(2, (postfix + '\n' if postfix else '') + prompt + '_')
-    def backward_buffer(self):
+    def forward_buffer(self):
         self.buffer_begin = self.buffer_end
         win_height = self.win_mgr.get_win_height(1)
         self.buffer_end = self.buffer_end + win_height\
                           if self.buffer_end + win_height < self.buffer_size\
                           else self.buffer_size
 
-    def forward_buffer(self):
+    def backward_buffer(self):
         win_height = self.win_mgr.get_win_height(1)
         self.buffer_begin = self.buffer_begin - win_height\
                             if self.buffer_begin > win_height\
@@ -214,10 +216,10 @@ class TerminalController:
             _last_hl_idx = highlight[-1] + 1
             # if the highlighted item is outside of this window, we
             # will update the window to show the item
-            while _last_hl_idx < self.buffer_begin:
-                self.forward_buffer()
-            while _last_hl_idx > self.buffer_end:
+            while _last_hl_idx < self.buffer_begin / self.item_height:
                 self.backward_buffer()
+            while _last_hl_idx > self.buffer_end / self.item_height:
+                self.forward_buffer()
 
         if self.win_mgr.get_win_height(1) >= self.buffer_size:
             # we can show the entire text buffer
@@ -233,11 +235,11 @@ class TerminalController:
                 return # escape when we are told only to show the buffer and quit
             _key = capture_keypress()
             while (_key not in quit_keys and
-                   not (_key == ' ' and self.buffer_end == self.buffer_size)) :
+                   not (_key == ' ' and self.buffer_end >= self.buffer_size)) :
                 if _key in page_down_keys:
-                    self.backward_buffer()
-                elif _key in page_up_keys:
                     self.forward_buffer()
+                elif _key in page_up_keys:
+                    self.backward_buffer()
                 self.win_mgr.update_window(1, '\n'.join(_buffer[self.buffer_begin:self.buffer_end]))
                 _key = capture_keypress()
 
@@ -300,7 +302,7 @@ class Ball(object):
         # limit the buffer window to half of the terminal height,
         #so that we could still show things like title, help messages etc.
         self.term.set_windows(self.term_width, 1,
-                              self.term_width, self.term_height / 2 * self.get_height(),
+                              self.term_width, self.term_height / 2 /self.get_height() * self.get_height(),
                               self.term_width, 1)
         self.term.set_title(title)
         self.term.show_buffer()
@@ -355,7 +357,9 @@ class HashBall(Ball):
     """
     A ball that holds a list of hash
     """
-    def __init__(self, list, name = 'hash'):
+    def __init__(self, list, infinite = None, name = 'hash'):
+        #indicates whether the ball contains unbound hash info
+        self.infinite = infinite
         super(HashBall, self).__init__(list, name)
     def __getitem__(self, k): #return the hash only
         _firstline = self.list[k].split('\n')[0]
@@ -364,7 +368,22 @@ class HashBall(Ball):
         exit_with_error("Deleting a hash is not allowed")
     def get_height(self):
         return 3
-
+    """
+    def paint_indexed_list(self, title, highlight, postfix, prompt):
+        self.highlight = highlight
+        self.prompt = prompt
+        _buff = index_list(self.list, highlight = highlight)
+        # configure the TerminalController for display
+        self.term.set_buffer(_buff)
+        # limit the buffer window to half of the terminal height,
+        #so that we could still show things like title, help messages etc.
+        self.term.set_windows(self.term_width, 1,
+                              self.term_width, (self.term_height / 2) / self.get_height() * self.get_height(),
+                              self.term_width, 1)
+        self.term.set_title(title)
+        self.term.show_buffer()
+        self.term.show_input_prompt(postfix, self.prompt)
+    """
 class FileBall(Ball):
     """
     A ball that holds a list of branches
@@ -1665,7 +1684,7 @@ def select_hash_range(with_current_hash = False, with_previous_hash = False):
         _current_hash, _base_hash = get_hashes(2)
     else: #get the hashes given by the user
         print("[+] Select a hash")
-        _base_hash = select_hash(since = 4)
+        _base_hash = select_hash(since = 10)
         if not with_current_hash:#we need two hashes to get the range
             print("[+] Select the other hash")
             _current_hash = select_hash(since = 4)
