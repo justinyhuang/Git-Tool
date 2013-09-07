@@ -10,9 +10,12 @@ class TextWindowManager(object):
     def create_window(self, width, height):
         self.windows.append([width, height])
         return len(self.windows) # this would be the id for the new window
-    def term_print(self, str):
-        print(str)
-        self.current_ptr += str.count('\n') + 1
+    def term_print(self, win_id, str):
+        width = self.windows[win_id][0]
+        for line in str.split('\n'):
+            line = line.replace('\t', '    ')
+            print(line[:width])
+            self.current_ptr += 1
     def move_to_top(self, win_id):
         sys.stdout.write(self.UP * self.current_ptr) # move to the top of everything
         self.current_ptr = 0
@@ -22,11 +25,11 @@ class TextWindowManager(object):
     def clear_window(self, win_id):
         self.move_to_top(win_id)
         window = self.windows[win_id]
-        self.term_print((' ' * window[0] + '\n') * window[1])
+        self.term_print(1, (' ' * window[0] + '\n') * window[1])
     def update_window(self, win_id, str):
         self.clear_window(win_id)
         self.move_to_top(win_id)
-        self.term_print(str)
+        self.term_print(win_id, str)
     def set_win_height(self, win_id, height):
         self.windows[win_id][1] = height
     def set_win_width(self, win_id, width):
@@ -272,13 +275,13 @@ class Ball(object):
     A ball is a carrier that holds the output of a git-tool helper function
     the carrier is able to perform certain operations on the data it holds.
     """
-    def __init__(self, _list, name = 'item'):
+    def __init__(self, _blist, name = 'item'):
         _height, _width = os.popen('stty size', 'r').read().split()
         self.term_height = int(_height)
         self.term_width = int(_width)
         #cut off the over-length data so that we could show the data
         #better in the terminal
-        self.list = [x[:self.term_width] for x in _list]
+        self.blist = [x[:self.term_width] for x in _blist]
         self.name = name
         self.highlight = 0
         self.selected_list = []
@@ -291,18 +294,19 @@ class Ball(object):
           \n   Use '/d <item_index>' to delete an %s or,\
           \n   Use '/e' to quit" % (self.name, self.name, self.name)
     def __getitem__(self, k):
-        return self.list[k]
+        return self.blist[k]
     def paint_indexed_list(self, title, highlight, postfix, prompt):
         self.prompt = prompt
-        _buff = index_list(self.list, highlight = highlight)
+        _buff = index_list(self.blist, highlight = highlight)
         # configure the TerminalController for display
         self.term.set_buffer(_buff)
         # limit the buffer window to half of the terminal height,
-        #so that we could still show things like title, help messages etc.
-        self.term.set_windows(self.term_width, 1,
-                              self.term_width,
+        # so that we could still show things like title, help messages etc.
+        # also we limit the window width to 2/3 of the terminal window
+        self.term.set_windows(self.term_width * 2 / 3, 1,
+                              self.term_width * 2 / 3,
                               (self.term_height / 2) / self.get_height() * self.get_height(),
-                              self.term_width, 1)
+                              self.term_width * 2 / 3, 1)
         self.term.set_title(title)
         # jumps to the idx that is highlighted
         # not to confused with the whole item that is highlighted
@@ -343,7 +347,7 @@ class Ball(object):
             try:
                 _result, _msg = func(self[x], self.name)
                 if _result is True: #user might choose not to delete
-                    self.list.remove(self[x])
+                    self.blist.remove(self[x])
             except LookupError:
                 _msg  = "item %d doesn't exist" % x
             print(_msg)
@@ -352,8 +356,8 @@ class BranchBall(Ball):
     """
     A ball that holds a list of branches
     """
-    def __init__(self, list, name = 'branch'):
-        super(BranchBall, self).__init__(list, name)
+    def __init__(self, blist, name = 'branch'):
+        super(BranchBall, self).__init__(blist, name)
     def delete(self, item_list):
         super(BranchBall, self).delete(item_list, delete_branch)
     def get_height(self):
@@ -363,33 +367,46 @@ class HashBall(Ball):
     """
     A ball that holds a list of hash
     """
-    def __init__(self, list = [], infinite = False, since = -1, name = 'hash'):
+    def __init__(self, blist = [], infinite = False, since = -1, name = 'hash'):
         #indicates whether the ball contains unbound hash info
         self.infinite = infinite
         self.since = since
-        super(HashBall, self).__init__(list, name)
+        self.original_blist = blist
+        super(HashBall, self).__init__(blist, name)
     def __getitem__(self, k): #return the hash only
-        _firstline = self.list[k].split('\n')[0]
+        _firstline = self.blist[k].split('\n')[0]
         return _firstline.split()[-1]
     def delete(self, item_list):
         exit_with_error("Deleting a hash is not allowed")
     def get_height(self):
-        return 3
+        return 4
+    def restore_old_list(self):
+        self.blist = self.original_blist
+
+    def get_log_index_by_keyword(self, keyword):
+        self.blist = self.original_blist
+        self.new_blist = []
+        for l in self.blist:
+            if keyword in l:
+                self.new_blist.append(l)
+        if self.new_blist:
+            self.blist = self.new_blist
+
 
 class FileBall(Ball):
     """
     A ball that holds a list of branches
     """
-    def __init__(self, list, name = 'file'):
-        super(FileBall, self).__init__(list, name)
+    def __init__(self, blist, name = 'file'):
+        super(FileBall, self).__init__(blist, name)
     def add(self, item_list): #to add a file into git
         for i in item_list:
-            item = self.list[i]
+            item = self.blist[i]
             if item.strip().startswith('??'): #not in git's control
                 #add the file into git
                 _file = item[item.rfind(' ') + 1:]
                 invoke(git.add(_file))
-                self.list[i] = re.sub('\?\?', 'A_', self.list[i])
+                self.blist[i] = re.sub('\?\?', 'A_', self.blist[i])
     def delete(self, item_list):
         super(FileBall, self).delete(item_list, revert_file_item)
     def get_height(self):
@@ -399,14 +416,14 @@ class UrlSourceBall(Ball):
     """
     A ball that holds and manages a list of url sources
     """
-    def __init__(self, list, name = 'url'):
+    def __init__(self, blist, name = 'url'):
         self.dict = {}
-        _list = []
-        for l in list:
+        _blist = []
+        for l in blist:
             _name, _count = l.split() # expected string is "url_name linked_ref_count"
-            _list.append(_name)
+            _blist.append(_name)
             self.dict[_name] = int(_count)
-        super(UrlSourceBall, self).__init__(_list, name)
+        super(UrlSourceBall, self).__init__(_blist, name)
     def delete(self, item_list):
         for i in item_list:
             if self.dict[self[i]] > 0: #there are still refs linked to this url
@@ -420,14 +437,14 @@ class RefSourceBall(Ball):
     """
     A ball that holds and manages a list of ref sources
     """
-    def __init__(self, list, name = 'Ref Source'):
+    def __init__(self, blist, name = 'Ref Source'):
         self.dict = {}
-        _list = []
-        for r in list:
+        _blist = []
+        for r in blist:
             _ref, _url_index = r.split() #expected string is 'ref url_index'
-            _list.append(_ref)
+            _blist.append(_ref)
             self.dict[_ref] = _url_index
-        super(RefSourceBall, self).__init__(_list, name)
+        super(RefSourceBall, self).__init__(_blist, name)
     def delete(self, item_list):
         for i in item_list:
             #first decrease the ref count of the linked url item
@@ -449,10 +466,10 @@ class RemoteSourceBall(Ball):
         remote.<name2>.<url/fetch> value
         ...
     """
-    def __init__(self, list, name = 'Remote Source'):
+    def __init__(self, blist, name = 'Remote Source'):
         self.dict = {}
-        _list = []
-        for r in list[:-1]:
+        _blist = []
+        for r in blist[:-1]:
             _name_begin = 7 #skip the 'remote.'
             _tmp = r.split()[0]
             #the line is either a fetch or a url setting
@@ -469,9 +486,9 @@ class RemoteSourceBall(Ball):
                 self.dict[_name] = {}
             self.dict[_name][_key] = _value
         for k in self.dict.keys():
-            _list.append( k + '\n\tfetch: ' + self.dict[k]['fetch']
+            _blist.append( k + '\n\tfetch: ' + self.dict[k]['fetch']
                             + '\n\turl: ' + self.dict[k]['url'])
-        super(RemoteSourceBall, self).__init__(_list, name)
+        super(RemoteSourceBall, self).__init__(_blist, name)
     def get_height(self):
         return 1
 
@@ -698,9 +715,9 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
             return _ans if _ans else default
 
 #show a list of items with index and one of the item highlighted
-def index_list(list, index_color = 'none', highlight = -1, hl_color = 'red'):
-    return [ paint(hl_color if index == highlight else index_color, '%d >> ' % index) +
-             '\t' + x for (index, x) in zip(range(0, len(list)), list)]
+def index_list(_list, index_color = 'none', highlight = -1, hl_color = 'red'):
+    return [ paint(hl_color if index == highlight else index_color, '%d >>' % index) +
+             '\t' + x for (index, x) in zip(range(0, len(_list)), _list)]
 
 #this function will expand strings like '1-3' to '1 2 3'
 def expand_indexes_from_range(obj):
@@ -1619,12 +1636,6 @@ def push_to_remote():
         return _tmp #when the push is ok, return the git command result
 
 #-------------------hash helppers
-def get_log_index_by_hash(hash):
-    _current_hash = get_hashes(1)
-    _hashes_inbetween = do_log(range = '%s..HEAD' % hash,
-                               format = '%h')
-    return len(_hashes_inbetween.split('\n'))
-
 #take two hashes and return a valid hash string based on the age of the hashes
 def ordered_hash_string(h1, h2):
     _birthday1 = invoke(git.log(hash = h1, num = 1, format = '%ct'))
@@ -1639,28 +1650,24 @@ def select_hash():
     skip = 0
     hl = None
     _range = "--skip=%d" % skip
-    _format='Rev:       %h%n\tDate:     %cd%n\tComment:  %s|'
+    _format='Rev:     %h%n\t\tAuthor:  %an%n\t\tDate:    %cd%n\t\tComment: %s|'
     _tmp = do_log(_range, _format)
-    _ball = HashBall(list = _tmp.split('|\n'))
+    _ball = HashBall(blist = _tmp.split('|\n'))
     while True:
         _ans = get_answer(title = ' Hash List ', default = '/m', ball = _ball, hl = hl,
                           help = '   Enter directly or "/m" for more commits, or\n' +
                                  '   "/m <ID>" for further details of the hash, or\n' +
-                                 '   "/f <commit hash>" to go to a specified commit\n')[0]
+                                 '   "/f <keyword>" to go to matching commits\n')[0]
+        hl = None
         if _ans.startswith('/m'): # to show detailed info about a commit
             _index = int(split(_ans)[-1])
             print(invoke(git.log(hash = _ball[_index], num = 1)))
             raw_input('Press Enter to continue...')
-        elif _ans.startswith('/f'): # to find a specific commit
-            if [] != re.findall('^/f\s*[0-9abcdef]{7,}$', _ans):
-                _hash = _ans.split()[1]
-                if if_hash_exist(_hash):
-                    #skip = get_log_index_by_hash(_hash) - 1
-                    _ans = get_log_index_by_hash(_hash) - 1
-                    hl = _ans
-                else:
-                    #print the error and return
-                    pass
+        elif _ans.startswith('/f'): # to find commits with a keyword
+            if len(_ans.split()) == 1: # /f without keyword will clear the search
+                _ball.restore_old_list()
+            else:
+                _ball.get_log_index_by_keyword(_ans.split()[1])
         else:
             return _ans
 

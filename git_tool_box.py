@@ -26,7 +26,7 @@ import gitcommand as git
 from githelper import *
 
 """
-TODO: when browsing hashes, provide the 'prev' command to go back to previous hash list
+TODO: have a background thread running to optimize the repo, like doing 'git gc', at a specified time
 TODO: when ask to pick two hashes (gsth, gdih, gsvh), ask the user to pick his "older" hash, and "newer" hash
 TODO: offer more user defined options/settings in the configuration file
 TODO: improve the user experience when doing merge/solving conflicts, e.g. auto-re-rebase
