@@ -26,7 +26,8 @@ import gitcommand as git
 from githelper import *
 
 """
-TODO: have a background thread running to optimize the repo, like doing 'git gc', at a specified time
+TODO: to show numbers of local changes, and number of commits behind/beyond the tracking branch, in gldb
+TODO: have a background thread running to optimize the repo, like doing 'git gc', at a specified time, we could do periodical fetch, too!
 TODO: when ask to pick two hashes (gsth, gdih, gsvh), ask the user to pick his "older" hash, and "newer" hash
 TODO: offer more user defined options/settings in the configuration file
 TODO: improve the user experience when doing merge/solving conflicts, e.g. auto-re-rebase
