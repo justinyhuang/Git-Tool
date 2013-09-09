@@ -13,8 +13,13 @@ class TextWindowManager(object):
     def term_print(self, win_id, str):
         width = self.windows[win_id][0]
         for line in str.split('\n'):
-            line = line.replace('\t', '    ')
-            print(line[:width])
+            line = line.expandtabs()
+            # there are corner cases where the '_end_' is cut out,
+            # we need to get rid of that
+            if line.endswith(_end_) and len(line) > width:
+                print(line[:width] + _end_)
+            else:
+                print(line[:width])
             self.current_ptr += 1
     def move_to_top(self, win_id):
         sys.stdout.write(self.UP * self.current_ptr) # move to the top of everything
@@ -214,15 +219,17 @@ class TerminalController:
                     first_line = idx * self.item_height
                     for l in xrange(self.item_height):
                         line = first_line + l
-                        _buffer[line] = self.text_buffer[line].replace('\t', '\t' + color['reverse']) + _end_
+                        _buffer[line] = color['reverse'] + self.text_buffer[line] + _end_
                 except LookupError:
                    pass # some of the selection is invalid, just ignore
-            _last_hl_idx = jump_to + 1 if jump_to else highlight[-1] + 1
+            _last_hl_idx = jump_to if jump_to else highlight[-1]
+            if _last_hl_idx < 0 or _last_hl_idx > self.buffer_size / self.item_height:
+                return # this is not a valid input
             # if the highlighted item is outside of this window, we
             # will update the window to show the item
             while _last_hl_idx < self.buffer_begin / self.item_height:
                 self.backward_buffer()
-            while _last_hl_idx > self.buffer_end / self.item_height:
+            while _last_hl_idx >= self.buffer_end / self.item_height:
                 self.forward_buffer()
         if self.win_mgr.get_win_height(1) >= self.buffer_size:
             # we can show the entire text buffer
@@ -230,7 +237,10 @@ class TerminalController:
             self.buffer_end = self.buffer_size
             self.win_mgr.update_window(1, '\n'.join(_buffer[self.buffer_begin:self.buffer_end]))
         else:
-            quit_keys = ['TwiceEsc', 'q', 'Q', '/']
+            # we will show part of the text buffer
+            digit_keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
+            pass_back_keys = digit_keys + ['/']
+            quit_keys = ['TwiceEsc', 'q', 'Q'] + pass_back_keys
             page_down_keys = ['PgDn', 'j', 'J', ' ', 'Down', 'Enter']
             page_up_keys = ['PgUp', 'Up', 'k', 'K']
             self.win_mgr.update_window(1, '\n'.join(_buffer[self.buffer_begin:self.buffer_end]))
@@ -245,7 +255,7 @@ class TerminalController:
                     self.backward_buffer()
                 self.win_mgr.update_window(1, '\n'.join(_buffer[self.buffer_begin:self.buffer_end]))
                 _key = capture_keypress()
-            if _key == '/':
+            if _key in pass_back_keys:
                 return _key
             else:
                 return None
@@ -362,6 +372,17 @@ class BranchBall(Ball):
         super(BranchBall, self).delete(item_list, delete_branch)
     def get_height(self):
         return 1
+    def enable_branch_details(self):
+        #prepare the detailed info for the branches to show later
+        _new_blist = []
+        _max_name_len = max([len(name) for name in self.blist])
+        for b in self.blist:
+            _new_blist.append(self.get_commit_diff(b, _max_name_len))
+        self.blist = _new_blist
+    def get_commit_diff(self, branch, max_len):
+        result = '3'
+        _str_format = '{0:%d}{1:5}' % (max_len + 3)
+        return _str_format.format(branch, result)
 
 class HashBall(Ball):
     """
@@ -379,7 +400,7 @@ class HashBall(Ball):
     def delete(self, item_list):
         exit_with_error("Deleting a hash is not allowed")
     def get_height(self):
-        return 4
+        return 5
     def restore_old_list(self):
         self.blist = self.original_blist
 
@@ -486,8 +507,8 @@ class RemoteSourceBall(Ball):
                 self.dict[_name] = {}
             self.dict[_name][_key] = _value
         for k in self.dict.keys():
-            _blist.append( k + '\n\tfetch: ' + self.dict[k]['fetch']
-                            + '\n\turl: ' + self.dict[k]['url'])
+            _blist.append( k + '\n    fetch: ' + self.dict[k]['fetch']
+                            + '\n    url: ' + self.dict[k]['url'])
         super(RemoteSourceBall, self).__init__(_blist, name)
     def get_height(self):
         return 1
@@ -716,8 +737,8 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
 
 #show a list of items with index and one of the item highlighted
 def index_list(_list, index_color = 'none', highlight = -1, hl_color = 'red'):
-    return [ paint(hl_color if index == highlight else index_color, '%d >>' % index) +
-             '\t' + x for (index, x) in zip(range(0, len(_list)), _list)]
+    return [ paint(hl_color if index == highlight else index_color, '%d >> ' % index) +
+             x for (index, x) in zip(range(0, len(_list)), _list)]
 
 #this function will expand strings like '1-3' to '1 2 3'
 def expand_indexes_from_range(obj):
@@ -844,6 +865,7 @@ def process_git_diff_stat(raw):
 def select_branch(isremote = False):
     _curbranch, _branch_list = get_branch_list(isremote)
     _listball = BranchBall(_branch_list, name = 'remote branch' if isremote else 'branch')
+    _listball.enable_branch_details()
     _ans = get_answer(title = ' Branch List ', default = '/e',
                       ball = _listball, hl = _curbranch)
     if _ans == '/e': #user enters nothing, might think of quit
@@ -1184,7 +1206,7 @@ def get_activity_distribution(author, time = 'monthly'):
             _index = months.index(_this_month)
             _time_dict = dict((m, _list_months.count(m)) for m in months[_index : _index + 6])
             for m in months[_index : _index + 6]:
-                _time_dist += '%s: %d commits\n\t' % (m, _time_dict[m])
+                _time_dist += '%s: %d commits\n    ' % (m, _time_dict[m])
     elif time == 'daily':
         _buff = invoke(git.log(authors=[author], format='%cd', param='--since="7 days ago"'))
         if _buff == '':
@@ -1195,17 +1217,17 @@ def get_activity_distribution(author, time = 'monthly'):
             _index = days.index(_today)
             _time_dict = dict((d, _list_days.count(d)) for d in days[_index : _index + 7])
             for d in days[_index : _index + 7]:
-                _time_dist += '%s: %d commits\n\t' % (d, _time_dict[d])
+                _time_dist += '%s: %d commits\n    ' % (d, _time_dict[d])
     elif time == 'weekly':
         _week_buff = invoke(git.log(authors=[author], format='%cd', param='--since="1 week ago"'))
         _commits = len(_week_buff.split('\n')) - 1
-        _time_dist += 'This week: %d commits \n\t' % _commits
+        _time_dist += 'This week: %d commits \n    ' % _commits
         for w in xrange(1, 5):
             _since = '--since="%d week ago"' % (w + 1)
             _until = '--until="%d week ago"' % w
             _week_buff = invoke(git.log(authors=[author], format='%cd', param='%s %s' % (_since, _until)))
             _commits = len(_week_buff.split('\n')) - 1
-            _time_dist += 'Previous %d week: %d\n\t' % (w, _commits)
+            _time_dist += 'Previous %d week: %d\n    ' % (w, _commits)
             _buff += _week_buff
     # build the file distribution
     _change_len = 10 #assume there are at most 9999999999 changes to show
@@ -1473,15 +1495,15 @@ def do_checkout_from_commit(ref):
         _new_branch = get_answer(prompt = "Give a name to the new branch")
     _parent_branch = get_current_branch()
     _parent_remote = get_remote(_parent_branch)
-    ref = ref.strip(' \n\t')
+    ref = ref.strip(' \n    ')
     try:
         _track_info = get_local("branch.%s.TrackInfo" % get_current_branch())
     except ConfigItemMissing:
-        _track_info = None
-    _tmp =  invoke(git.checkout(target = ref, new_branch = _new_branch))
+        _track_info = _parent_remote #like origin/maste
+    #_tmp = invoke(git.checkout(target = ref, new_branch = _new_branch))
+    _tmp = invoke(git.branch(branch = _new_branch, upstream = _track_info))
     if 'fatal: git checkout:' in _tmp: #something wrong occur when checking out
         exit_with_error(_tmp)
-    _tmp += invoke(git.branch(branch = _new_branch, upstream = _track_info))
     set_local("branch.%s.TrackInfo" % _new_branch, value = _track_info)
     return _tmp
 
@@ -1650,7 +1672,7 @@ def select_hash():
     skip = 0
     hl = None
     _range = "--skip=%d" % skip
-    _format='Rev:     %h%n\t\tAuthor:  %an%n\t\tDate:    %cd%n\t\tComment: %s|'
+    _format='-----%n   Rev:  %h%n   Author:  %an%n   Date:    %cd%n   Comment: %s|'
     _tmp = do_log(_range, _format)
     _ball = HashBall(blist = _tmp.split('|\n'))
     while True:
