@@ -710,8 +710,6 @@ def get_answer(title = [], prompt = '', postfix = '', default = None,
             _ans = raw_input(prompt + _ps).strip()
         if '/h' == _ans:
             print(make_msg_bar(['Help']) + help)
-            if ball:
-                ball.term.reset_window()
         elif '/e' == _ans:
             exit()
         elif _ans.startswith('/d '):
@@ -755,6 +753,9 @@ def get_answer(title = [], prompt = '', postfix = '', default = None,
                 return _ans if _ans else default
         else:
             return _ans if _ans else default
+
+        if ball:
+            ball.term.reset_window()
 
 #show a list of items with index and one of the item highlighted
 def index_list(_list, index_color = 'none', highlight = -1, hl_color = 'red'):
