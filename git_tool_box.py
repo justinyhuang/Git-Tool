@@ -26,7 +26,6 @@ import gitcommand as git
 from githelper import *
 
 """
-TODO: to show numbers of local changes, and number of commits behind/beyond the tracking branch, in gldb
 TODO: have a background thread running to optimize the repo, like doing 'git gc', at a specified time, we could do periodical fetch, too!
 TODO: when ask to pick two hashes (gsth, gdih, gsvh), ask the user to pick his "older" hash, and "newer" hash
 TODO: offer more user defined options/settings in the configuration file
@@ -156,7 +155,7 @@ def GITSave(srv = '', param = ''):
                     _changed, _untracked= get_changed_files(_status)
                     _changed_files = _changed + _untracked
                     _ball = FileBall(_changed_files)
-                    _save_files = get_answer(title = ' File List ',
+                    _save_files = get_answer(title = [' File List '],
                                              prompt = 'Select files to save: ',
                                              ball = _ball)
                     do_commit(files_to_save = _save_files, msg = _msg)
@@ -268,7 +267,7 @@ def GITLoad(srv, param):
                     return "The hash you choose is identical with your current version"
                 #prompt to pick files
                 _ball = FileBall(_changed_files.split('\n'))
-                _load_files = get_answer(title = ' File List ',
+                _load_files = get_answer(title = [' File List '],
                                          prompt = 'Select the changed files to load: ',
                                          ball = _ball)
                 do_checkout_file_from_commit(_load_files, _load_hash)
@@ -457,7 +456,7 @@ def GITStatus(srv, param):
             _changed, _untracked= get_changed_files(_status)
             _comp1, _comp2 = get_current_branch(), 'working copy'
         _files = FileBall(_changed + _untracked)
-        _ans = get_answer(title = make_status_header(_comp1, _comp2),
+        _ans = get_answer(title = [make_status_header(_comp1, _comp2)],
                           prompt = '',
                           default = '/e',
                           help = _git_status_code,

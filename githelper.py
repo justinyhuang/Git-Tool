@@ -43,6 +43,8 @@ class TextWindowManager(object):
         return self.windows[win_id][1]
     def get_win_width(self, win_id):
         return self.windows[win_id][0]
+    def reset_ptr(self):
+        self.current_ptr = 0
 
 
 # borrowed from
@@ -181,6 +183,8 @@ class TerminalController:
     def set_buffer(self, buff):
         self.text_buffer = '\n'.join(buff).split('\n')
         self.buffer_size = '\n'.join(buff).count('\n') + 1# line # of the buffer
+    def reset_window(self):
+        self.win_mgr.reset_ptr()
     def set_windows(self, width1, height1, width2, height2, width3, height3):
         self.buffer_begin = 0
         self.item_number_in_window = height2 / self.item_height
@@ -193,7 +197,7 @@ class TerminalController:
         self.win_mgr.create_window(width3, height3)
     def set_title(self, title):
         self.title = title
-        self.win_mgr.set_win_height(0, title.count('\n') + 1)
+        self.win_mgr.set_win_height(0, title.count('\n'))
     def show_input_prompt(self, postfix, prompt):
         self.win_mgr.move_to_top(2)
         self.win_mgr.update_window(2, (postfix + '\n' if postfix else '') + prompt + '_')
@@ -317,7 +321,7 @@ class Ball(object):
                               self.term_width * 2 / 3,
                               (self.term_height / 2) / self.get_height() * self.get_height(),
                               self.term_width * 2 / 3, 1)
-        self.term.set_title(title)
+        self.term.set_title(make_msg_bar(title))
         # jumps to the idx that is highlighted
         # not to confused with the whole item that is highlighted
         _forward_user_input = self.term.show_buffer(jump_to = highlight)
@@ -357,7 +361,7 @@ class Ball(object):
             try:
                 _result, _msg = func(self[x], self.name)
                 if _result is True: #user might choose not to delete
-                    self.blist.remove(self[x])
+                    del self.blist[x]
             except LookupError:
                 _msg  = "item %d doesn't exist" % x
             print(_msg)
@@ -368,21 +372,37 @@ class BranchBall(Ball):
     """
     def __init__(self, blist, name = 'branch'):
         super(BranchBall, self).__init__(blist, name)
+    def __getitem__(self, k):
+        # the item contains not only branch names, but other info
+        # and we don't need those extra stuff
+        return self.blist[k].split()[0]
     def delete(self, item_list):
         super(BranchBall, self).delete(item_list, delete_branch)
     def get_height(self):
         return 1
     def enable_branch_details(self):
+        if self.name == 'remote branch':
+            return # we don't show details for remote branch, yet
         #prepare the detailed info for the branches to show later
         _new_blist = []
-        _max_name_len = max([len(name) for name in self.blist])
+        _max_bname_len = max([len(name) for name in self.blist])
+        self.branch_name_title_len = _max_bname_len + 3
         for b in self.blist:
-            _new_blist.append(self.get_commit_diff(b, _max_name_len))
+            _new_blist.append(self.get_commit_diff(b))
         self.blist = _new_blist
-    def get_commit_diff(self, branch, max_len):
-        result = '3'
-        _str_format = '{0:%d}{1:5}' % (max_len + 3)
-        return _str_format.format(branch, result)
+    def get_commit_diff(self, branch):
+        _remote_branch = get_merge(branch)
+        _upstream = 'refs/remotes/origin' + _remote_branch[ _remote_branch.rfind('/'):]
+        _branch_only_commits = invoke(git.log(hash = '%s ^%s' % (branch, _upstream),
+                                              param = '--no-merges --oneline'))
+        _upstream_only_commits = invoke(git.log(hash = '%s ^%s' % (_upstream, branch),
+                                              param = '--no-merges --oneline'))
+        _branch_only_number = paint('green', '+%d' % (_branch_only_commits.count('\n')
+                                                      if _branch_only_commits else 0))
+        _upstream_only_number = paint('red', '-%d' % (_upstream_only_commits.count('\n')
+                                                      if _upstream_only_commits else 0))
+        _str_format = '{0:<%d}{1:<5}{2:<5}' % (self.branch_name_title_len)
+        return _str_format.format(branch, _branch_only_number, _upstream_only_number)
 
 class HashBall(Ball):
     """
@@ -395,7 +415,7 @@ class HashBall(Ball):
         self.original_blist = blist
         super(HashBall, self).__init__(blist, name)
     def __getitem__(self, k): #return the hash only
-        _firstline = self.blist[k].split('\n')[0]
+        _firstline = self.blist[k].split('\n')[1]
         return _firstline.split()[-1]
     def delete(self, item_list):
         exit_with_error("Deleting a hash is not allowed")
@@ -403,7 +423,6 @@ class HashBall(Ball):
         return 5
     def restore_old_list(self):
         self.blist = self.original_blist
-
     def get_log_index_by_keyword(self, keyword):
         self.blist = self.original_blist
         self.new_blist = []
@@ -665,7 +684,7 @@ def get_indexes(line, operator = ''):
 #helper function to prompt users information and receive answers
 #this function returns either a list or a string, the caller should understand well
 #what the return value could be and handle accordingly
-def get_answer(title = '', prompt = '', postfix = '', default = None,
+def get_answer(title = [], prompt = '', postfix = '', default = None,
                help = '', ball = None, hl = None, loop = True):
     if (ball and ball.help): # take the help if it is provided by the ball
         help += ball.help
@@ -681,7 +700,7 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
             # we are drawing everything ourselves, so hide the system
             # cursor (we will draw a 'fake' one)
             hide_cursor()
-            _user_input = ball.paint_indexed_list(make_msg_bar(title),
+            _user_input = ball.paint_indexed_list(title,
                                                   hl,
                                                   postfix,
                                                   prompt + _ps)
@@ -690,7 +709,9 @@ def get_answer(title = '', prompt = '', postfix = '', default = None,
         else:
             _ans = raw_input(prompt + _ps).strip()
         if '/h' == _ans:
-            print(help)
+            print(make_msg_bar(['Help']) + help)
+            if ball:
+                ball.term.reset_window()
         elif '/e' == _ans:
             exit()
         elif _ans.startswith('/d '):
@@ -781,12 +802,14 @@ def merge_or_checkout(target, in_list, default_op = ''):
 
 #print message with a fixed length bar
 def make_msg_bar(msg):
-    _colorless_msg = msg
+    _result = ''
+    _colorless_msg = msg[0]
     _colorless_msg = re.sub('\033[^m]*m', '', _colorless_msg) #remove the color code
     _msg_len = len(_colorless_msg)
     _pre = paint('yellow', '=' * ((80 - _msg_len) / 2))
     _post = paint('yellow', '=' * ((80 - _msg_len) / 2 + (80 - _msg_len) % 2))
-    return _pre+msg+_post+'\n'
+    _result += _pre + msg[0] + _post+'\n'
+    return _result + '\n'.join(msg[1:])
 
 #exit with error
 def exit_with_error(msg = ''):
@@ -864,10 +887,15 @@ def process_git_diff_stat(raw):
 #         the selected branch/es, (COULD BE A BRANCH LIST)
 def select_branch(isremote = False):
     _curbranch, _branch_list = get_branch_list(isremote)
-    _listball = BranchBall(_branch_list, name = 'remote branch' if isremote else 'branch')
+    _listball = BranchBall(_branch_list,
+                           name = 'remote branch' if isremote else 'branch')
     _listball.enable_branch_details()
-    _ans = get_answer(title = ' Branch List ', default = '/e',
-                      ball = _listball, hl = _curbranch)
+    _ans = get_answer(title = [' Branch List '], default = '/e',
+                      ball = _listball, hl = _curbranch,
+                      help = paint('green', '+x ') +
+                             'tells the number of commits in this branch but not in the upstream branch\n' +
+                             paint('red', '-x ') +
+                             'tells the number of commits in the upstream branch but not in this branch\n')
     if _ans == '/e': #user enters nothing, might think of quit
         exit()
     if isinstance(_ans, str): #guarantee that we always return a list of selected branches
@@ -1022,7 +1050,7 @@ def change_branch():
         set_local('branch.master.merge', 'refs/heads/master')
     else:
         _ball = RemoteSourceBall(_tmp.split('\n'))
-        _ans = get_answer(title = 'Remote List', prompt = 'Pick a remote setting',
+        _ans = get_answer(title = ['Remote List'], prompt = 'Pick a remote setting',
                           help = "this is to change the remote values of the current branch",
                           ball = _ball)
         _remote = _ans[0].split('\n')[0]
@@ -1108,6 +1136,12 @@ def copy_branch_config(branch_to, branch_from):
 def get_remote(branch):
     try:
         return get_local('branch.%s.remote' % branch)
+    except ConfigItemMissing:
+        return None
+
+def get_merge(branch):
+    try:
+        return get_local('branch.%s.merge' % branch)
     except ConfigItemMissing:
         return None
 
@@ -1500,8 +1534,10 @@ def do_checkout_from_commit(ref):
         _track_info = get_local("branch.%s.TrackInfo" % get_current_branch())
     except ConfigItemMissing:
         _track_info = _parent_remote #like origin/maste
-    #_tmp = invoke(git.checkout(target = ref, new_branch = _new_branch))
-    _tmp = invoke(git.branch(branch = _new_branch, upstream = _track_info))
+    #build and go into the branch
+    _tmp = invoke(git.checkout(target = ref, new_branch = _new_branch))
+    #set the upstream info for the branch
+    _tmp += invoke(git.branch(branch = _new_branch, upstream = _track_info))
     if 'fatal: git checkout:' in _tmp: #something wrong occur when checking out
         exit_with_error(_tmp)
     set_local("branch.%s.TrackInfo" % _new_branch, value = _track_info)
@@ -1582,7 +1618,7 @@ def do_clone():
     _urls = get_source_list('url')
     _ball = UrlSourceBall(_urls)
     _url = get_answer(prompt = 'Pick a source to clone from',
-                      title = ' URL List ',
+                      title = [' URL List '],
                       ball = _ball)
     if isinstance(_url, list):
         _url = _url[0]
@@ -1596,7 +1632,7 @@ def do_init():
     #show all files and prompt what to add into the initial commit
     _files = FileBall(os.listdir('.'))
     _new_files = get_answer(prompt = 'Select the files to be added into the new repository',
-                            title = 'File List',
+                            title = ['File List'],
                             ball = _files)
     invoke(git.init())
     invoke(git.add(_new_files))
@@ -1620,7 +1656,7 @@ def push_to_remote():
         _urls = get_source_list('url')
         _ball = UrlSourceBall(_urls)
         _url = get_answer(prompt = 'Select a URL to push',
-                          title = ' URL List ',
+                          title = [' URL List '],
                           ball = _ball)[0]
         if _url not in [x.split()[0] for x in _urls]:
             #user type in a new item that is not in the ball list, remember it
@@ -1634,7 +1670,7 @@ def push_to_remote():
         _ball = RefSourceBall(_refs)
         #TODO: FIX THE ISSUE HERE!!!
         _ref = get_answer(prompt = 'Select a REF to push',
-                          title = ' Reference List ',
+                          title = [' Reference List '],
                           ball = _ball) #[0]
         if _ref not in [x.split()[0] for x in _refs]:
             #user type in a new item that is not in the ball list
@@ -1672,11 +1708,11 @@ def select_hash():
     skip = 0
     hl = None
     _range = "--skip=%d" % skip
-    _format='-----%n   Rev:  %h%n   Author:  %an%n   Date:    %cd%n   Comment: %s|'
+    _format='%n   Rev:  %h%n   Author:  %an%n   Date:    %cd%n   Comment: %s|'
     _tmp = do_log(_range, _format)
     _ball = HashBall(blist = _tmp.split('|\n'))
     while True:
-        _ans = get_answer(title = ' Hash List ', default = '/m', ball = _ball, hl = hl,
+        _ans = get_answer(title = [' Hash List '], default = '/m', ball = _ball, hl = hl,
                           help = '   Enter directly or "/m" for more commits, or\n' +
                                  '   "/m <ID>" for further details of the hash, or\n' +
                                  '   "/f <keyword>" to go to matching commits\n')[0]
