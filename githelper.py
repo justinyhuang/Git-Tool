@@ -1,5 +1,6 @@
 import gitcommand as git
-import subprocess, pdb, os, sys, re, math, time, operator, termios
+import subprocess, pdb, os, sys, re, math, time, operator, termios, datetime
+from apscheduler.scheduler import Scheduler
 
 class TextWindowManager(object):
     def __init__(self, up, down):
@@ -689,9 +690,9 @@ def get_answer(title = [], prompt = '', postfix = '', default = None,
     if (ball and ball.help): # take the help if it is provided by the ball
         help += ball.help
     if not help: #no help is available
-        help = 'No help available for this case...\n'\
-             + "'/a' to add; '/d' to delete; '/m' for more\n"\
-             + "'/f' to find; '/h' for help; '/e' to exit"
+        help = "No help available for this case...\n" +\
+               "'/a' to add; '/d' to delete; '/m' for more\n" +\
+               "'/f' to find; '/h' for help; '/e' to exit"
         _ps = PROMPT_SIGN
     else: #show colored prompt if help is available
         _ps = paint('lightblue', PROMPT_SIGN)
@@ -893,10 +894,10 @@ def select_branch(isremote = False):
     _listball.enable_branch_details()
     _ans = get_answer(title = [' Branch List '], default = '/e',
                       ball = _listball, hl = _curbranch,
-                      help = paint('green', '+x ') +
-                             'tells the number of commits in this branch but not in the upstream branch\n' +
-                             paint('red', '-x ') +
-                             'tells the number of commits in the upstream branch but not in this branch\n')
+                      help = paint('green', '+x ') +\
+                             "tells the number of commits in this branch but not in the upstream branch\n" +\
+                             paint('red', '-x ') +\
+                             "tells the number of commits in the upstream branch but not in this branch\n")
     if _ans == '/e': #user enters nothing, might think of quit
         exit()
     if isinstance(_ans, str): #guarantee that we always return a list of selected branches
@@ -933,6 +934,28 @@ def get_branches_with_commit(hash):
     _cmd = git.branch(contains = hash)
     return [x.strip(' *') for x in split(invoke(_cmd), '\n') if x]
 
+def do_periodical_fetch():
+    try:
+        _config = get_local("core.UpdateTime")
+        _periods = [x.split(':') for x in _config.split(', ')]
+        _periods = [map(int, x) for x in _periods]
+    except NameError:
+        print('Set to default update time, 00:00:00')
+        _periods = [[0, 0, 0]]
+        set_local("0:0:0")
+    _tmw = datetime.date.today() + datetime.timedelta(days=1)
+    for h, m, s in _periods:
+        sched = Scheduler()
+        @sched.cron_schedule(year = _tmw.year, month = _tmw.month, day = _tmw.day,
+                             hour = h, minute = m, second = s)
+        def periodical_update():
+            print(invoke(git.fetch()))
+        sched.start()
+    while True:
+        #quit until the value in the configuration is cleared
+        time.sleep(0.2)
+        pass
+
 def update_local_branch():
     #1. fetch the updates from remote repo
     try:
@@ -945,10 +968,10 @@ def update_local_branch():
     #2. ask for option
     _ans = get_answer(prompt = "fetch completes, shall we Merge or Rebase? (m/R)",
                       default = 'r',
-                      help = "Merge will keep the history of changes but mix the local " +\
-                             "changes with the merged changes; while Rebase keeps all " +\
-                             "local changes together but modifies the change history " +\
-                             "and make it hard to trace back. You shall determine which " +\
+                      help = "Merge will keep the history of changes but mix the local "
+                             "changes with the merged changes; while Rebase keeps all "
+                             "local changes together but modifies the change history "
+                             "and make it hard to trace back. You shall determine which "
                              "strategy you would like to use, carefully.")
     _remote_branch = get_remote_branch()
     if _remote_branch is None:
@@ -1022,7 +1045,7 @@ def delete_branch(branch, type):
     elif 'is not fully merged' in _tmp: #check if we should try with -D
         _ans = get_answer(prompt = "%s is not fully merged. Delete it anyway? [y/N]" % branch,
                           default = 'n',
-                          help = "it is likely you have changes in the branch.\n" +
+                          help = "it is likely you have changes in the branch.\n"
                                  "you can force deleting the branch, or quit.")
         if _ans.lower() == 'y':
             #delete the corresponding config values
@@ -1060,7 +1083,8 @@ def change_branch():
         try:
             _fetch_str = get_local('remote.%s.fetch' % _remote)
         except ConfigItemMissing:
-            exit_with_error("config item is missing, please report to the developer so that we can fix it!")
+            exit_with_error("config item is missing,"
+                            " please report to the developer so that we can fix it!")
         _remote_path = _fetch_str.split(':')[0].strip('+')
         if not '*' in _remote_path:
             set_local('branch.%s.merge' % bname, value = _remote_path)
@@ -1083,7 +1107,8 @@ def get_configurations():
             _current_branch_remote = get_remote(_current_branch)
             _current_branch_merge = get_local('branch.%s.merge' % _current_branch)
         except ConfigItemMissing:
-            exit_with_error("config item is missing, please report to the developer so that we can fix it!")
+            exit_with_error("config item is missing,"
+                            " please report to the developer so that we can fix it!")
         _remote_branch = get_remote_branch(show_remote_path = True)
         _repo_url = get_remote_url()
     else:
@@ -1126,7 +1151,8 @@ def copy_branch_config(branch_to, branch_from):
             _parent_fetch = get_local('remote.%s.fetch' % _parent_remote)
             _parent_merge = get_local('branch.%s.merge' % branch_from)
         except ConfigItemMissing:
-            exit_with_error("config item is missing, please report to the developer so that we can fix it!")
+            exit_with_error("config item is missing,"
+                            " please report to the developer so that we can fix it!")
         #set the values of the current branch
         set_local('branch.%s.merge' % branch_to, _parent_merge)
         set_local('branch.%s.remote' % branch_to, branch_to)
@@ -1160,7 +1186,8 @@ def set_remote_url(url):
     try:
         _remote = get_remote(get_current_branch())
     except ConfigItemMissing:
-        exit_with_error("config item is missing, please report to the developer so that we can fix it!")
+        exit_with_error("config item is missing,"
+                        " please report to the developer so that we can fix it!")
     set_local('remote.%s.url' % _remote, url)
 
 #get the remote branch, the merge value in the branch section
@@ -1384,10 +1411,10 @@ def do_log_tag(range):
         if _container_tags:
             #the hash has tags attached, get the tags on this specific hash
             _tags = list(set(_tmp) & set(_container_tags))
-            _result += '___\nRev:     %s\nAuthor:  %s\nDate:    %s\nBranch:  %s\nComment: %s\nTags: %s\n' %\
+            _result += "___\nRev:     %s\nAuthor:  %s\nDate:    %s\nBranch:  %s\nComment: %s\nTags: %s\n" %\
                        (_hash, _author, _date, _branch, _comment, _tags)
         else: #a hash without any tag
-            _result += '___\nRev:     %s\nAuthor:  %s\nDate:    %s\nBranch:  %s\nComment: %s\n' %\
+            _result += "___\nRev:     %s\nAuthor:  %s\nDate:    %s\nBranch:  %s\nComment: %s\n" %\
                        (_hash, _author, _date, _branch, _comment)
     return _result
 
@@ -1714,8 +1741,8 @@ def select_hash():
     _ball = HashBall(blist = _tmp.split('|\n'))
     while True:
         _ans = get_answer(title = [' Hash List '], default = '/m', ball = _ball, hl = hl,
-                          help = '   Enter directly or "/m" for more commits, or\n' +
-                                 '   "/m <ID>" for further details of the hash, or\n' +
+                          help = '   Enter directly or "/m" for more commits, or\n'
+                                 '   "/m <ID>" for further details of the hash, or\n'
                                  '   "/f <keyword>" to go to matching commits\n')[0]
         hl = None
         if _ans.startswith('/m'): # to show detailed info about a commit
@@ -1937,5 +1964,4 @@ else:
     color['gray'] = ''
     color['reverse'] = ''
     _end_ = ''
-
 

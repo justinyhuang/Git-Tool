@@ -27,6 +27,11 @@ from githelper import *
 
 """
 TODO: have a background thread running to optimize the repo, like doing 'git gc', at a specified time, we could do periodical fetch, too!
+      - to have gldp to start periodically loading/updating, or to set
+        a config item to specify if periodically loading/updating is required, for all git-tool operations, first check if the item is set,
+        if yes, we check if the background process is working, if not, start it
+TODO: to support partial commit of local changes
+TODO: provide a list of valid remote branches, when updating the local branch
 TODO: when ask to pick two hashes (gsth, gdih, gsvh), ask the user to pick his "older" hash, and "newer" hash
 TODO: offer more user defined options/settings in the configuration file
 TODO: improve the user experience when doing merge/solving conflicts, e.g. auto-re-rebase
@@ -206,6 +211,7 @@ def GITLoad(srv, param):
     _iftag = 't' in srv
     _ifref = _ifhash or _iftag or any(if_hash_exist(x) for x in param)
     _ifmerge = 'm' in srv
+    _ifperiodically_load = 'p' in srv
     if not root_path(): #in a non-git path, do a clone (nothing else we could do, right?)
         if _ifbranch or _ifremote or _ifhash or _iftag:
             exit_with_error("You need to run the command in a git repo")
@@ -272,6 +278,12 @@ def GITLoad(srv, param):
                                          ball = _ball)
                 do_checkout_file_from_commit(_load_files, _load_hash)
                 return 'done'
+            elif _ifperiodically_load: # to start a background updating process
+                pid = os.fork()
+                if pid > 0: #the parent process
+                    print("The local repository will be udpated periodically.")
+                else:       #the newly created background process
+                    do_periodical_fetch()
             else: # if i have to guess, i will try updating the repo
                 _ans = get_answer(prompt = "Update current repository? [Y/n]",
                                   default = 'y',
@@ -579,26 +591,26 @@ def GITSetup(param):
         else:
             set_global('GitTool.ColorSupport', 'yes')
         #setup the difftools
-        print("Valid merge tools are: araxis, bc3, diffuse, emerge, ecmerge, gvimdiff, kdiff3," +
+        print("Valid merge tools are: araxis, bc3, diffuse, emerge, ecmerge, gvimdiff, kdiff3, "
               "kompare, meld, opendiff, p4merge, tkdiff, vimdiff and xxdiff.")
         _ans = get_answer(prompt = "Please specify your first choice of diff tool:",
                            help = "it will be used as the default tool when diff")
         set_global('difftool.first', _ans)
         _ans = get_answer(prompt = "and your second choice of diff tool?",
-                           help = "it will be used as the secondary tool when diff." +
-                                  "\nleave it blank if you don't have a secondary diff tool")
+                           help = "it will be used as the secondary tool when diff.\n"
+                                  "leave it blank if you don't have a secondary diff tool")
         set_global('difftool.second', _ans)
         _ans = get_answer(prompt = "and your third choice of diff tool?",
-                           help = "it will be used as the third tool when diff" +
-                                  "\nleave it blank if you don't have a secondary diff tool")
+                           help = "it will be used as the third tool when diff\n"
+                                  "leave it blank if you don't have a secondary diff tool")
         set_global('difftool.third', _ans)
         #set the graphic info tool settings
         #setup the symbolic links
         print("Please specify where you would like to put the GITTool facilities")
         print("[eg. '~/bin/GTool', '/tools']")
         print("\nMake sure the path is in your PATH variable")
-        _ans = get_answer(help = "The GitUtilTool works based on" +
-                                  paint('red', " A LOT OF ") + "small link files\n" +
+        _ans = get_answer(help = "The GitUtilTool works based on" +\
+                                  paint('red', " A LOT OF ") + "small link files\n" +\
                                   "It's suggested to make a dedicated directory for the tool")
         _target_dir=os.path.expanduser(_ans)
         if not os.path.isdir(_target_dir):
