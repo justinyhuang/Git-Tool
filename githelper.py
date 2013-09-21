@@ -15,10 +15,10 @@ class TextWindowManager(object):
         width = self.windows[win_id][0]
         for line in str.split('\n'):
             line = line.expandtabs()
-            # there are corner cases where the '_end_' is cut out,
+            # there are corner cases where the 'color['end']' is cut out,
             # we need to get rid of that
-            if line.endswith(_end_) and len(line) > width:
-                print(line[:width] + _end_)
+            if line.endswith(color['end']) and len(line) > width:
+                print(line[:width] + color['end'])
             else:
                 print(line[:width])
             self.current_ptr += 1
@@ -224,7 +224,7 @@ class TerminalController:
                     first_line = idx * self.item_height
                     for l in xrange(self.item_height):
                         line = first_line + l
-                        _buffer[line] = color['reverse'] + self.text_buffer[line] + _end_
+                        _buffer[line] = color['reverse'] + self.text_buffer[line] + color['end']
                 except LookupError:
                    pass # some of the selection is invalid, just ignore
             _last_hl_idx = jump_to if jump_to else highlight[-1]
@@ -559,7 +559,7 @@ class NoBallFound(GITError):
 #No direct git command calls will be made in these functions.
 
 def paint(text_color, str):
-    return color[text_color] + str + _end_
+    return color[text_color] + str + color['end']
 
 #-------------------basic and misc helppers
 # to capture a keypress, in Linux
@@ -1270,7 +1270,7 @@ def get_activity_distribution(author, time = 'monthly'):
             for m in months[_index : _index + 6]:
                 _time_dist += '%s: %d commits\n    ' % (m, _time_dict[m])
     elif time == 'daily':
-        _buff = invoke(git.log(authors=[author], format='%cd', param='--since="7 days ago"'))
+        _buff = invoke(git.log(authors=[author], format='%cd %h', param='--since="7 days ago"'))
         if _buff == '':
             _time_dist = '0 commits in the recent 7 days'
         else:
@@ -1281,13 +1281,14 @@ def get_activity_distribution(author, time = 'monthly'):
             for d in days[_index : _index + 7]:
                 _time_dist += '%s: %d commits\n    ' % (d, _time_dict[d])
     elif time == 'weekly':
-        _week_buff = invoke(git.log(authors=[author], format='%cd', param='--since="1 week ago"'))
+        _buff = ''
+        _week_buff = invoke(git.log(authors=[author], format='%cd %h', param='--since="1 week ago"'))
         _commits = len(_week_buff.split('\n')) - 1
         _time_dist += 'This week: %d commits \n    ' % _commits
         for w in xrange(1, 5):
             _since = '--since="%d week ago"' % (w + 1)
             _until = '--until="%d week ago"' % w
-            _week_buff = invoke(git.log(authors=[author], format='%cd', param='%s %s' % (_since, _until)))
+            _week_buff = invoke(git.log(authors=[author], format='%cd %h', param='%s %s' % (_since, _until)))
             _commits = len(_week_buff.split('\n')) - 1
             _time_dist += 'Previous %d week: %d\n    ' % (w, _commits)
             _buff += _week_buff
@@ -1300,7 +1301,7 @@ def get_activity_distribution(author, time = 'monthly'):
         _changed_files += invoke(git.diff(selection = '%(hash)s..%(hash)s^ --numstat' % {'hash': h},
                                  name_only = False))
     _area_dict = process_git_diff_stat(_changed_files)
-    _longest_name = max([len(x) for x in _area_dict.keys()])
+    _longest_name = max([len(x) for x in _area_dict.keys()]) if _area_dict else 0
     _area_dist = ['%s, %s, %s' % ("Item".center(_longest_name),
                               paint('green', "Added".center(_change_len)),
                               paint('red', "Deleted".center(_change_len)))]
@@ -1437,7 +1438,7 @@ def _remove_unwanted_logs(log, start, end):
     _list = log.split('\n')
     _log_pointer = 0
     _line_index = 0
-    _start_index = _end_index = 0
+    _start_index = color_end_index = 0
     for line in _list:
         _line_index += 1
         if line.strip():
@@ -1452,12 +1453,12 @@ def _remove_unwanted_logs(log, start, end):
         if _log_pointer == start - 1:
             _start_index = _line_index
         if _log_pointer == end:
-            _end_index = _line_index - 1
+            color_end_index = _line_index - 1
             break;
-    if _start_index == 0 or _end_index == 0:
+    if _start_index == 0 or color_end_index == 0:
         print("oops, parsing the log went wrong")
         sys.exit()
-    _tmp = _list[:2] + _list[_start_index:_end_index]
+    _tmp = _list[:2] + _list[_start_index:color_end_index]
     _result = '\n'.join(_tmp) + '\n}'
     return _result
 
@@ -1952,7 +1953,9 @@ if COLOR:
     color['white'] = '\033[37m'
     color['gray'] = '\033[30m'
     color['reverse'] = '\033[07m'
-    _end_ = '\033[00m'
+    color['end'] = '\033[00m'
+    color['quote_left'] = color['red']
+    color['quote_right'] = color['end']
 else:
     color['red'] = ''
     color['green'] = ''
@@ -1963,5 +1966,6 @@ else:
     color['white'] = ''
     color['gray'] = ''
     color['reverse'] = ''
-    _end_ = ''
-
+    color['end'] = ''
+    color['quote_left'] = "'"
+    color['quote_right'] = "'"

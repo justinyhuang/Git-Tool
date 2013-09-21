@@ -3,20 +3,20 @@
 Git-Tool - a utility set for easier use of git
 
 Available services:
-   gsv: Git SaVe, to 'save' your changes
-   gld: Git LoaD, to 'load' new data as/into current working copy
-   gdi: Git DIff, compare file/s between commits/branches
-   gst: Git STatus, list modified/added/removed files between hashes/branches
-   gls: Git List, shows basic information of the current hash
-   gcf: Git ConFig, shows the global settings and configuration of the working copy.
-   gsm: Git Summary, shows statistics of items in a Git repo
-   ghelp: help info for GITUtil
+   `gsv': Git SaVe, to 'save' your changes
+   `gld': Git LoaD, to 'load' new data as/into current working copy
+   `gdi': Git DIff, compare file/s between commits/branches
+   `gst': Git STatus, list modified/added/removed files between hashes/branches
+   `gls': Git List, shows basic information of the current hash
+   `gcf': Git ConFig, shows the global settings and configuration of the working copy.
+   `gsm': Git Summary, shows statistics of items in a Git repo
+   `ghelp': help info for GITUtil
 Dependencies (please install):
    git: Git-Tool is a wrapper of git
    graphviz: Git-Tool needs this tool to show graphical hash tree via glsg
 
 Also:
-   try <command> --help to get detailed help message for the command
+   try `<command> --help' or `ghelp <command>' to get detailed help message for the command
 """
 import os, re, sys, subprocess
 from optparse import OptionParser
@@ -46,12 +46,12 @@ TODO: add the path of git-tool bin directory to PATH and the path of git-tool py
 
 def GITSummary(srv = '', param = ''):
     """ gsm
-        To show 'summary' of statistics of Git items.
-            * a simple 'gsm' will show a brief summary of the current repository.
-            * 'gsm <file name>' will show you a brief summary of the file.
-            * 'gsm <user email>' will show you a brief summary of the user/s
-               adding 'monthly', or 'weekly', or 'daily' at the end will show you the monthly,
-               weekly or daily distribution of the user/s' activities
+        To show "summary" of statistics of Git items.
+            * a simple `gsm' will show a brief summary of the current repository.
+            * `gsm <file name>' will show you a brief summary of the file.
+            * `gsm <user email>' will show you a brief summary of the user/s
+               adding `monthly', or `weekly', or `daily' at the end will show you the monthly,
+               weekly or daily distribution of the user activities
                the default interval is monthly
     """
     if len(param) > 1: # there are additional parameters to the command
@@ -104,7 +104,7 @@ def GITSummary(srv = '', param = ''):
 
 def GITSave(srv = '', param = ''):
     """ gsv
-        To 'save' your changes. A 'save' could be:
+        To "save" your changes. A "save" could be:
             * a git init - create a new repository based on local files
               When invoked in a non-git path, gsv will perform a git init and
               create a local repository.
@@ -118,15 +118,15 @@ def GITSave(srv = '', param = ''):
               gsv will perform a git push.
 
             * a git format-patch - save to a patch file
-              With 'gsv <hash1>..<hash2> <filename>' gsv will generate a patch into
+              With `gsv <hash1>..<hash2> <filename>' gsv will generate a patch into
               the patch file with the given name.
-              With 'gsv <filename>' gsv will allow the user to pick two hashes and
+              With `gsv <filename>' gsv will allow the user to pick two hashes and
               generate the patch file based on user's selection.
 
         Not sure about the hash/file? Use the following for interative operation:
-            * gsvh - save changes between two hashes into a patch file
-            * gsvf - save some changed files instead of saving all the changed files
-        Do 'gsv ?' to show this help message.
+            * `gsvh' - save changes between two hashes into a patch file
+            * `gsvf' - save some changed files instead of saving all the changed files
+        Do "gsv --help" to show this help message.
     """
     _ifhash = ('h' in srv)
     _iffile = ('f' in srv)
@@ -173,25 +173,27 @@ def GITSave(srv = '', param = ''):
 
 def GITLoad(srv, param):
     """ gld
-        To 'load' new data into/as your current copy. A 'load' could be:
+        To "load" new data into/as your current copy. A "load" could be:
             * a git clone - load a repository to local path
               When issued in a non-git path, with no parameter given
-              'gld' will perform a git clone.
+              `gld' will perform a git clone.
 
             * a git fetch/pull/rebase - load new changes from remote repo to local
                                         after that one can choose to do a merge/rebase
               When issued in a git path, with no parameter given
-              'gld' will perform a git fetch (update the local repo),
+              `gld' will perform a git fetch (update the local repo),
               and allow to merge, rebase, or quit after fetch.
+              Use `gldp' to create a process that will fetch the changes from the remote
+              repository in background for you, at specified time every day.
 
             * a git apply - load changes from a patch file
-              When 'gld <patch_name>' in a git path
-              'gld' will perform a git apply to take the patch into current working copy
+              When `gld <patch_name>' in a git path
+              `gld' will perform a git apply to take the patch into current working copy
 
             * a git checkout - load data from a branch, or by a hash/tag
-              When 'gld <ref_name>' in a git path, where a ref could be a branch/hash/tag
-              'gld' will perform a git checkout
-              When 'gld <file_name> <hash_name>' in a git path, 'gld' will load the file
+              When `gld <ref_name>' in a git path, where a ref could be a branch/hash/tag
+              `gld' will perform a git checkout
+              When `gld <file_name> <hash_name>' in a git path, `gld' will load the file
               from the given hash.
 
         Not sure about the branch/hash/tag? Use the following for interative operation:
@@ -202,7 +204,7 @@ def GITLoad(srv, param):
             * gldt - to pick a tag from list and do a checkout or merge [NOT IMPLEMENTED]
             * gldm - to merge a branch to the current branch
 
-        Do 'gld ?' to show this help message.
+        Do `gld --help' to show this help message.
     """
     _ifremote = 'r' in srv
     _ifbranch = 'b' in srv or _ifremote #when 'r' is given, 'b' automatically becomes True
@@ -298,21 +300,21 @@ def GITDiff(srv, param):
     """ gdi
         To show differences of file/s between:
             * working copy and the latest commit.
-              'gdi' without parameter shows the file difference.
+              `gdi' without parameter shows the file difference.
             * local copy and the linked/tracked remote one.
-              'gdir' without parameter shows the file difference.
+              `gdir' without parameter shows the file difference.
             * two hashes.
-              'gdi <hash1>..<hash2>' shows file difference between hash1 and hash2.
-              'gdi <hash>' shows file difference between working copy and hash.
-              'gdih' without parameter allows to select two hashes to compare.
+              `gdi <hash1>..<hash2>' shows file difference between hash1 and hash2.
+              `gdi <hash>' shows file difference between working copy and hash.
+              `gdih' without parameter allows to select two hashes to compare.
 
-        'gdi' allows doing diff with different tools:
-            * 'gdi' and its relatives will do diff with the default primary diff tool.
-            * 'gdi2'/'gdi3' and its relatives will do diff with the secondary/third diff tool.
+        `gdi' allows doing diff with different tools:
+            * `gdi' and its relatives will do diff with the default primary diff tool.
+            * `gdi2'/'gdi3' and its relatives will do diff with the secondary/third diff tool.
 
-        'gdi <filename>' with or without other options shows only the difference in the given file.
+        `gdi <filename>' with or without other options shows only the difference in the given file.
 
-        'gdic' with or without other options shows a combined diff result.
+        `gdic' with or without other options shows a combined diff result.
     """
     check_git_path()
     _isremote, _ishash, _iscombined = ('r' in srv), ('h' in srv), ('c' in srv)
@@ -369,19 +371,19 @@ def GITStatus(srv, param):
     gst
     To show the status (what have been changed) between:
        * working copy and the latest commit.
-         'gst' shows the changed files
+         `gst' shows the changed files
        * two commits/branch HEADs
-         'gst <hash1>..<hash2>' or 'gst <branch1>..<branch2>' shows the changed files
-         'gsth' allows to select two hashes to show the changed files between them
+         `gst <hash1>..<hash2>' or `gst <branch1>..<branch2>' shows the changed files
+         `gsth' allows to select two hashes to show the changed files between them
        * working copy and the given commit/branch HEAD
-         'gst <hash>' or 'gst <branch>' shows the changed files
+         `gst <hash>' or `gst <branch>' shows the changed files
        * working copy and its tracked/linked remote
-         'gstr' shows the changed files
-       * 'gstg <number of versions to look back>' shows a distribution graph of changes
+         `gstr' shows the changed files
+       * `gstg <number of versions to look back>' shows a distribution graph of changes
          on files/directories
 
     To only show changed files in a given path?
-         'gstd <path>' will do the job.
+         `gstd <path>' will do the job.
     """
     _git_status_code =\
     """
@@ -481,26 +483,26 @@ def GITList(srv, param):
     gls
     To show a list of commit information.
         * by specifying a range
-          'gls <other options> <n>' shows n latest commits' info.
-          When 'n' is not given, only the latest commit will be shown.
-          'gls <other options> <index 1> <index 2>'
+          `gls <other options> <n>' shows info of n latest commits.
+          When "n" is not given, only the latest commit will be shown.
+          `gls <other options> <index 1> <index 2>'
           shows all the commits between the two indexes.
-          e.g 'gls 3 0' shows the commits from HEAD to the 3rd parent of HEAD
-              'gls 7 4' shows the commits from the 4th parent to the 7th parent of HEAD
+          e.g `gls 3 0' shows the commits from HEAD to the 3rd parent of HEAD
+              `gls 7 4' shows the commits from the 4th parent to the 7th parent of HEAD
         * by specifying file/directory names
-          'gls <file/dir_names> <other options>' shows commits to the files/directories
+          `gls <file/dir_names> <other options>' shows commits to the files/directories
         * by specifying the authors
-          'gls <author emails> <other options>'
+          `gls <author emails> <other options>'
         * by asking for the tag info
-          'glst <other options>'
+          `glst <other options>'
           shows more information including branches and tags, if there is any.
           However, fetching the tag info would take a bit more time.
         * show commit information in a graph.
-          'glsg <range options>' shows a graphical commit tree.
+          `glsg <range options>' shows a graphical commit tree.
           Options can be given to specify a range
-          *NOTE*: graphviz is required to enable the 'g' option
+          *NOTE*: graphviz is required to enable the "g" option
         * show commit information between two dates
-          'glsd <other options>'
+          `glsd <other options>'
     """
     check_git_path()
     _if_graphic, _if_show_tag = ('g' in srv), ('t' in srv)
@@ -548,9 +550,9 @@ def GITConfig(srv, param):
         show the configuration of the current repository and the global settings.
         it is also possible to modify the values interatively with this tool.
         to set a config value, do:
-            gcf <local/global> <section> <value>
-        gcfb to show the current branch name, faster than 'git branch'
-        gcfc to change the branch settings of the current branch. ##NOT YET TESTED
+            `gcf <local/global> <section> <value>'
+        `gcfb' to show the current branch name
+        `gcfc' to change the branch settings of the current branch. ##NOT YET TESTED
     """
     _if_change_branch = 'c' in srv
     _if_show_cur_branch = 'b' in srv
@@ -669,12 +671,19 @@ if __name__ == '__main__':
         #a major service will always be a 3-character key word
         if service == 'ghelp':
             try:
-                print(CALL_TABLE[sys.argv[1][:3]].__doc__)
+                help = CALL_TABLE[sys.argv[1][:3]].__doc__
             except Exception:
-                print(__doc__)
+                help = __doc__
+            help = help.replace("`", color['quote_left'])
+            help = help.replace("'", color['quote_right'])
+            print(help)
         else:
             if len(sys.argv) == 2 and sys.argv[1] == '--help':
-                print(CALL_TABLE[service[:3]].__doc__)
+                help = CALL_TABLE[service[:3]].__doc__
+                help = help.replace("`", color['quote_left'])
+                help = help.replace("'", color['quote_right'])
+                #help %= {'_red': color['red'], 'red_': color['end']}
+                print(help)
                 exit()
             try:
                 result = CALL_TABLE[service[:3]](service[3:], sys.argv)
