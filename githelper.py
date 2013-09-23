@@ -389,21 +389,8 @@ class BranchBall(Ball):
         _max_bname_len = max([len(name) for name in self.blist])
         self.branch_name_title_len = _max_bname_len + 3
         for b in self.blist:
-            _new_blist.append(self.get_commit_diff(b))
+            _new_blist.append(get_commit_diff(b, self.branch_name_title_len))
         self.blist = _new_blist
-    def get_commit_diff(self, branch):
-        _remote_branch = get_merge(branch)
-        _upstream = 'refs/remotes/origin' + _remote_branch[ _remote_branch.rfind('/'):]
-        _branch_only_commits = invoke(git.log(hash = '%s ^%s' % (branch, _upstream),
-                                              param = '--no-merges --oneline'))
-        _upstream_only_commits = invoke(git.log(hash = '%s ^%s' % (_upstream, branch),
-                                              param = '--no-merges --oneline'))
-        _branch_only_number = paint('green', '+%d' % (_branch_only_commits.count('\n')
-                                                      if _branch_only_commits else 0))
-        _upstream_only_number = paint('red', '-%d' % (_upstream_only_commits.count('\n')
-                                                      if _upstream_only_commits else 0))
-        _str_format = '{0:<%d}{1:<5}{2:<5}' % (self.branch_name_title_len)
-        return _str_format.format(branch, _branch_only_number, _upstream_only_number)
 
 class HashBall(Ball):
     """
@@ -934,22 +921,43 @@ def get_branches_with_commit(hash):
     _cmd = git.branch(contains = hash)
     return [x.strip(' *') for x in split(invoke(_cmd), '\n') if x]
 
+#return a colored string showing the difference in commits
+#between the given branch and its upstream branch
+def get_commit_diff(branch, branch_name_len):
+    try:
+        _remote_branch = get_merge(branch)
+        _upstream = 'refs/remotes/origin' + _remote_branch[ _remote_branch.rfind('/'):]
+        _branch_only_commits = invoke(git.log(hash = '%s ^%s' % (branch, _upstream),
+                                              param = '--no-merges --oneline'))
+        _upstream_only_commits = invoke(git.log(hash = '%s ^%s' % (_upstream, branch),
+                                              param = '--no-merges --oneline'))
+        _branch_only_number = paint('green', '+%d' % (_branch_only_commits.count('\n')
+                                                      if _branch_only_commits else 0))
+        _upstream_only_number = paint('red', '-%d' % (_upstream_only_commits.count('\n')
+                                                      if _upstream_only_commits else 0))
+        _str_format = '{0:<%d}{1:<5}{2:<5}' % (branch_name_len)
+        return _str_format.format(branch, _branch_only_number, _upstream_only_number)
+    except:
+        return paint('red', branch)
+
 def do_periodical_fetch():
     try:
         _config = get_local("core.UpdateTime")
         _periods = [x.split(':') for x in _config.split(', ')]
         _periods = [map(int, x) for x in _periods]
-    except NameError:
-        print('Set to default update time, 00:00:00')
+    except ConfigItemMissing:
+        print('local repo is updated 00:00:00 every day')
         _periods = [[0, 0, 0]]
-        set_local("0:0:0")
+        set_local('core.UpdateTime', value = "0:0:0")
     _tmw = datetime.date.today() + datetime.timedelta(days=1)
     for h, m, s in _periods:
         sched = Scheduler()
         @sched.cron_schedule(year = _tmw.year, month = _tmw.month, day = _tmw.day,
                              hour = h, minute = m, second = s)
         def periodical_update():
-            print(invoke(git.fetch()))
+            invoke(git.fetch())
+            print(paint('yellow', 'GitTool Notice:') +\
+                  'the local repo has been updated.')
         sched.start()
     while True:
         #quit until the value in the configuration is cleared
@@ -1438,7 +1446,7 @@ def _remove_unwanted_logs(log, start, end):
     _list = log.split('\n')
     _log_pointer = 0
     _line_index = 0
-    _start_index = color_end_index = 0
+    _start_index = _end_index = 0
     for line in _list:
         _line_index += 1
         if line.strip():
@@ -1453,12 +1461,12 @@ def _remove_unwanted_logs(log, start, end):
         if _log_pointer == start - 1:
             _start_index = _line_index
         if _log_pointer == end:
-            color_end_index = _line_index - 1
+            _end_index = _line_index - 1
             break;
-    if _start_index == 0 or color_end_index == 0:
+    if _start_index == 0 or _end_index == 0:
         print("oops, parsing the log went wrong")
         sys.exit()
-    _tmp = _list[:2] + _list[_start_index:color_end_index]
+    _tmp = _list[:2] + _list[_start_index:_end_index]
     _result = '\n'.join(_tmp) + '\n}'
     return _result
 
@@ -1533,7 +1541,7 @@ def do_checkout_branch(target, in_list = True, isremote = False, new_branch = ""
     if isremote: #to 'checkout' a remote branch is to fetch and make the branch local
         _tmp = do_fetch(ref = target)
     elif in_list: #this is an existing branch
-        print("loading branch %s ..." % paint('red', target))
+        print("loading branch %s ..." % get_commit_diff(target, len(target) + 3))
         _tmp = invoke(git.checkout(target = target, new_branch = new_branch))
         if new_branch != "":
             set_local("core.CurrentBranch", value = new_branch)
@@ -1733,40 +1741,42 @@ def ordered_hash_string(h1, h2):
         return '%s..%s' % (h1, h2)
 
 #prompt the user a list of hashes and ask for a selected hash
-def select_hash():
+def select_hash(hball = None):
     skip = 0
     hl = None
-    _range = "--skip=%d" % skip
-    _format='%n   Rev:  %h%n   Author:  %an%n   Date:    %cd%n   Comment: %s|'
-    _tmp = do_log(_range, _format)
-    _ball = HashBall(blist = _tmp.split('|\n'))
+    if hball is None:
+        _range = "--skip=%d" % skip
+        _format='%n   Rev:  %h%n   Author:  %an%n   Date:    %cd%n   Comment: %s|'
+        _tmp = do_log(_range, _format)
+        hball = HashBall(blist = _tmp.split('|\n'))
+    hball.term.reset_window()
     while True:
-        _ans = get_answer(title = [' Hash List '], default = '/m', ball = _ball, hl = hl,
+        _ans = get_answer(title = [' Hash List '], default = '/m', ball = hball, hl = hl,
                           help = '   Enter directly or "/m" for more commits, or\n'
                                  '   "/m <ID>" for further details of the hash, or\n'
                                  '   "/f <keyword>" to go to matching commits\n')[0]
         hl = None
         if _ans.startswith('/m'): # to show detailed info about a commit
             _index = int(split(_ans)[-1])
-            print(invoke(git.log(hash = _ball[_index], num = 1)))
+            print(invoke(git.log(hash = hball[_index], num = 1)))
             raw_input('Press Enter to continue...')
         elif _ans.startswith('/f'): # to find commits with a keyword
             if len(_ans.split()) == 1: # /f without keyword will clear the search
-                _ball.restore_old_list()
+                hball.restore_old_list()
             else:
-                _ball.get_log_index_by_keyword(_ans.split()[1])
+                hball.get_log_index_by_keyword(_ans.split()[1])
         else:
-            return _ans
+            return _ans, hball
 
 def select_hash_range(with_current_hash = False, with_previous_hash = False):
     if with_previous_hash is True: #obtain the current and its previous hash
         _current_hash, _base_hash = get_hashes(2)
     else: #get the hashes given by the user
         print("[+] Select a hash")
-        _base_hash = select_hash()
+        _base_hash, _ball = select_hash()
         if not with_current_hash:#we need two hashes to get the range
             print("[+] Select the other hash")
-            _current_hash = select_hash()
+            _current_hash, tmp = select_hash(_ball)
         else:
             _current_hash = get_hashes(1)[0]
     return ordered_hash_string(_base_hash, _current_hash)
