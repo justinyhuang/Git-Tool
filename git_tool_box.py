@@ -263,7 +263,7 @@ def GITLoad(srv, param):
                     return merge_or_checkout(target = _branch,
                                              in_list = _branch in _branch_list)
             elif _ifhash: #checkout a hash to a new branch
-                _hash = select_hash()
+                _hash, not_used = select_hash()
                 return do_checkout_from_commit(_hash)
             elif _iftag: #checkout a tag to a new branch
                 exit_with_error("This feature is not supported, yet")
