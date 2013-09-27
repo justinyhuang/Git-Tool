@@ -1,6 +1,9 @@
 import gitcommand as git
 import subprocess, pdb, os, sys, re, math, time, operator, termios, datetime
-from apscheduler.scheduler import Scheduler
+try:
+    from apscheduler.scheduler import Scheduler
+except:
+    pass
 
 class TextWindowManager(object):
     def __init__(self, up, down):
@@ -304,10 +307,11 @@ class Ball(object):
         # for better control of the terminal output
         self.term = TerminalController(item_height = self.get_height())
         self.help = "You can: \
-          \n   Type the index of the %s or,\
-          \n   Type the name for a %s or,\
-          \n   Use '/d <item_index>' to delete an %s or,\
-          \n   Use '/e' to quit" % (self.name, self.name, self.name)
+          \n   Type the index of the %(name)s or,\
+          \n   Type the name for a %(name)s or,\
+          \n   Use '/d <item_index>' to delete an %(name)s or,\
+          \n   Use '/a <item_index>' to add an %(name)s or,\
+          \n   Use '/e' to quit" % {'name': self.name}
     def __getitem__(self, k):
         return self.blist[k]
     def paint_indexed_list(self, title, highlight, postfix, prompt):

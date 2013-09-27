@@ -3,8 +3,8 @@
 Git-Tool - a utility set for easier use of git
 
 Available services:
-   `gsv': Git SaVe, to 'save' your changes
-   `gld': Git LoaD, to 'load' new data as/into current working copy
+   `gsv': Git SaVe, to "save" your changes
+   `gld': Git LoaD, to "load" new data as/into current working copy
    `gdi': Git DIff, compare file/s between commits/branches
    `gst': Git STatus, list modified/added/removed files between hashes/branches
    `gls': Git List, shows basic information of the current hash
@@ -14,6 +14,7 @@ Available services:
 Dependencies (please install):
    git: Git-Tool is a wrapper of git
    graphviz: Git-Tool needs this tool to show graphical hash tree via glsg
+   APScheduler: a python library
 
 Also:
    try `<command> --help' or `ghelp <command>' to get detailed help message for the command
@@ -695,12 +696,19 @@ if __name__ == '__main__':
             #a major service will always be a 3-character key word
             if service == 'ghelp':
                 try:
-                    print(CALL_TABLE[sys.argv[1][:3]].__doc__)
+                    help = CALL_TABLE[sys.argv[1][:3]].__doc__
                 except Exception:
-                    print(__doc__)
+                    help = __doc__
+                help = help.replace("`", color['quote_left'])
+                help = help.replace("'", color['quote_right'])
+                print(help)
             else:
                 if len(sys.argv) == 2 and sys.argv[1] == '--help':
-                    print(CALL_TABLE[service[:3]].__doc__)
+                    help = CALL_TABLE[service[:3]].__doc__
+                    help = help.replace("`", color['quote_left'])
+                    help = help.replace("'", color['quote_right'])
+                    #help %= {'_red': color['red'], 'red_': color['end']}
+                    print(help)
                     exit()
                 try:
                     result = CALL_TABLE[service[:3]](service[3:], sys.argv)
