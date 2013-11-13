@@ -1,4 +1,4 @@
-![Git-Tool](https://raw.github.com/justinyhuang/Git-Tool/master/Git-Util.png)  
+![Git-Tool](https://raw.github.com/justinyhuang/Git-Tool/master/Git-Tool.png)  
 Git, though powerful and popular, in most cases is too complicated to use. The command set is huge,
 the parameters are too many, the design is sophisticated and hense the learning period is too long.
 For some one who wants only a tool to manage his/her source code or document, to master Git and

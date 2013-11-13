@@ -27,10 +27,9 @@ import gitcommand as git
 from githelper import *
 
 """
+TODO: optimize the command 'gldp', so that the user could check what sandboxes are being updated automatically.
+TODO: make use of git stash - we should invoke this command in background, when switching branches/updating local repo with uncommited changes.
 TODO: have a background thread running to optimize the repo, like doing 'git gc', at a specified time, we could do periodical fetch, too!
-      - to have gldp to start periodically loading/updating, or to set
-        a config item to specify if periodically loading/updating is required, for all git-tool operations, first check if the item is set,
-        if yes, we check if the background process is working, if not, start it
 TODO: to support partial commit of local changes
 TODO: provide a list of valid remote branches, when updating the local branch
 TODO: when ask to pick two hashes (gsth, gdih, gsvh), ask the user to pick his "older" hash, and "newer" hash
@@ -320,6 +319,7 @@ def GITDiff(srv, param):
     check_git_path()
     _isremote, _ishash, _iscombined = ('r' in srv), ('h' in srv), ('c' in srv)
     _difftool = _file = _hashes = _remote_branch = ''
+    _file = []
     #look for the user preferred diff tool
     if '2' in srv:
         _difftool = get_global('difftool.second')
@@ -344,10 +344,10 @@ def GITDiff(srv, param):
                 else:
                     continue #cannot find the hash, keep checking the rest params
             if os.path.isfile(x): #the file exist
-                _file = x
+                _file.append(x)
                 continue # get the file name, check the rest parameters
         if _ishash and not _hashes: #allow user to select hashes on the fly
-            _hashes = select_hash_range()
+            _hashes = select_hash_range(file = _file)
     if _iscombined:
         _cmd = git.show(selection = _hashes, param = '-m --pretty=short', file = _file)
     else:

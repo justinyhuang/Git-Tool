@@ -1745,11 +1745,11 @@ def ordered_hash_string(h1, h2):
         return '%s..%s' % (h1, h2)
 
 #prompt the user a list of hashes and ask for a selected hash
-def select_hash(hball = None):
+def select_hash(hball = None, file = []):
     skip = 0
     hl = None
     if hball is None:
-        _range = "--skip=%d" % skip
+        _range = "--skip=%d -- %s " % (skip, ' '.join(file))
         _format='%n   Rev:  %h%n   Author:  %an%n   Date:    %cd%n   Comment: %s|'
         _tmp = do_log(_range, _format)
         hball = HashBall(blist = _tmp.split('|\n'))
@@ -1772,15 +1772,15 @@ def select_hash(hball = None):
         else:
             return _ans, hball
 
-def select_hash_range(with_current_hash = False, with_previous_hash = False):
+def select_hash_range(with_current_hash = False, with_previous_hash = False, file = []):
     if with_previous_hash is True: #obtain the current and its previous hash
         _current_hash, _base_hash = get_hashes(2)
     else: #get the hashes given by the user
         print("[+] Select a hash")
-        _base_hash, _ball = select_hash()
+        _base_hash, _ball = select_hash(file = file)
         if not with_current_hash:#we need two hashes to get the range
             print("[+] Select the other hash")
-            _current_hash, tmp = select_hash(_ball)
+            _current_hash, tmp = select_hash(hball = _ball)
         else:
             _current_hash = get_hashes(1)[0]
     return ordered_hash_string(_base_hash, _current_hash)

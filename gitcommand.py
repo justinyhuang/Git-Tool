@@ -10,7 +10,7 @@ def diff(selection = '', name_only = True, type = 'ACDMRTUXB*'):
 
 def difftool(difftool, hashes, remote_branch, file):
     return 'git difftool -y -t %(t)s %(h)s %(r)s %(f)s' %\
-           {'t': difftool, 'h': hashes, 'r': remote_branch, 'f': file}
+           {'t': difftool, 'h': hashes, 'r': remote_branch, 'f': ' '.join(file)}
 
 def shortlog(param = ''):
     return 'git shortlog %s' % param
