@@ -1955,7 +1955,7 @@ def remove_link_file(x):
 #-------------------GLOBAL SETTINGS-------------------
 # Edit the following settings to make GITTool fits your need
 PROMPT_SIGN = ':> ' # unichr(0x263B) will show a smiling face.
-DEBUG = True
+DEBUG = False
 COLOR = False if get_global('GitTool.ColorSupport') == 'no' else True
 
 color = dict()
