@@ -355,6 +355,9 @@ class Ball(object):
         self.term.show_buffer(browse_mode = False, highlight = idx)
 
     def get_highlight_indexes(self, string):
+        if re.findall('^[\S]+\s+[\S]+',string) == []:
+            # if there is no space in the middle of the string, numbers in the string should not be considered as indexes
+            return None
         _operator = re.findall('^[\s\D]*', string) #it always returns something
         #return the highlighted indexes
         return get_indexes(operator = _operator[0], line = string)
@@ -1952,7 +1955,7 @@ def remove_link_file(x):
 #-------------------GLOBAL SETTINGS-------------------
 # Edit the following settings to make GITTool fits your need
 PROMPT_SIGN = ':> ' # unichr(0x263B) will show a smiling face.
-DEBUG = False
+DEBUG = True
 COLOR = False if get_global('GitTool.ColorSupport') == 'no' else True
 
 color = dict()
