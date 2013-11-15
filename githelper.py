@@ -355,8 +355,10 @@ class Ball(object):
         self.term.show_buffer(browse_mode = False, highlight = idx)
 
     def get_highlight_indexes(self, string):
-        if re.findall('^[\S]+\s+[\S]+',string) == []:
-            # if there is no space in the middle of the string, numbers in the string should not be considered as indexes
+        if not re.findall('^[\S]+\s+[\S]+',string) and not re.findall('^\d+', string):
+            # if there is no space in the middle of the string, numbers in the string
+            # should not be considered as indexes but if the entire string is pure number,
+            # we know it must be indexes
             return None
         _operator = re.findall('^[\s\D]*', string) #it always returns something
         #return the highlighted indexes
@@ -1752,7 +1754,8 @@ def select_hash(hball = None, file = []):
     skip = 0
     hl = None
     if hball is None:
-        _range = "--skip=%d -- %s " % (skip, ' '.join(file))
+        _range = "--skip=%d %s " % (skip,
+                                    '--' + ' '.join(file) if file else '')
         _format='%n   Rev:  %h%n   Author:  %an%n   Date:    %cd%n   Comment: %s|'
         _tmp = do_log(_range, _format)
         hball = HashBall(blist = _tmp.split('|\n'))
