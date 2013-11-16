@@ -1755,7 +1755,7 @@ def select_hash(hball = None, file = []):
     hl = None
     if hball is None:
         _range = "--skip=%d %s " % (skip,
-                                    '--' + ' '.join(file) if file else '')
+                                    '-- ' + ' '.join(file) if file else '')
         _format='%n   Rev:  %h%n   Author:  %an%n   Date:    %cd%n   Comment: %s|'
         _tmp = do_log(_range, _format)
         hball = HashBall(blist = _tmp.split('|\n'))
