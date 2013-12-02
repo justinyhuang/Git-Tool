@@ -441,7 +441,8 @@ class FileBall(Ball):
             item = self.blist[i]
             if item.strip().startswith('??'): #not in git's control
                 #add the file into git
-                _file = item[item.rfind(' ') + 1:]
+                _file = item[item.find(' ') + 1:]
+                _file = _file.replace(' ', '\ ') # in case the file name has space
                 invoke(git.add(_file))
                 self.blist[i] = re.sub('\?\?', 'A_', self.blist[i])
     def delete(self, item_list):
