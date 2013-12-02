@@ -11,10 +11,12 @@ Available services:
    `gcf': Git ConFig, shows the global settings and configuration of the working copy.
    `gsm': Git Summary, shows statistics of items in a Git repo
    `ghelp': help info for GITUtil
-Dependencies (please install):
-   git: Git-Tool is a wrapper of git
-   graphviz: Git-Tool needs this tool to show graphical hash tree via glsg
-   APScheduler: a python library
+Dependencies:
+   Must Have:
+      git: Git-Tool is a wrapper of git
+   Better To Have:
+      graphviz: Git-Tool needs this tool to show graphical hash tree via glsg
+      APScheduler: a python library, needed for periodically update your local repo
 
 Also:
    try `<command> --help' or `ghelp <command>' to get detailed help message for the command
@@ -27,7 +29,7 @@ import gitcommand as git
 from githelper import *
 
 """
-TODO: optimize the command 'gldp', so that the user could check what sandboxes are being updated automatically.
+TODO: GitTool doesn't work in the shell environment of Emacs, fix it
 TODO: make use of git stash - we should invoke this command in background, when switching branches/updating local repo with uncommited changes.
 TODO: have a background thread running to optimize the repo, like doing 'git gc', at a specified time, we could do periodical fetch, too!
 TODO: to support partial commit of local changes
