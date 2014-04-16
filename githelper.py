@@ -947,8 +947,8 @@ def get_commit_diff(branch, branch_name_len):
                                                       if _upstream_only_commits else 0))
         _str_format = '{0:<%d}{1:<5}{2:<5}' % (branch_name_len)
         return _str_format.format(branch, _branch_only_number, _upstream_only_number)
-    except:
-        return paint('red', branch)
+    except: # something wrong with getting the diff info, just use plain paint
+        return branch
 
 def do_periodical_fetch():
     try:
@@ -1959,7 +1959,7 @@ def remove_link_file(x):
 #-------------------GLOBAL SETTINGS-------------------
 # Edit the following settings to make GITTool fits your need
 PROMPT_SIGN = ':> ' # unichr(0x263B) will show a smiling face.
-DEBUG = False
+DEBUG = True
 COLOR = False if get_global('GitTool.ColorSupport') == 'no' else True
 
 color = dict()
